@@ -45,11 +45,16 @@ MCP.configure do |config|
 end
 
 Rails.application.config.to_prepare do
-  McpTools.register McpTools::CreateWorkPackage,
+  McpTools.register McpTools::CreateGroup,
+                    McpTools::CreateMembership,
+                    McpTools::CreateProject,
+                    McpTools::CreateUser,
+                    McpTools::CreateWorkPackage,
                     McpTools::CreateWorkPackageComment,
                     McpTools::CreateWorkPackageRelation,
                     McpTools::CurrentUser,
                     McpTools::DeleteWorkPackageRelation,
+                    McpTools::ListRoles,
                     McpTools::ListStatuses,
                     McpTools::ListTypes,
                     McpTools::ListWorkPackageComments,
