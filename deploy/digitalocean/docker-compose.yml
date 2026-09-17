@@ -1,0 +1,77 @@
+# Production stack for a single DigitalOcean Droplet with DigitalOcean Managed PostgreSQL.
+# There is deliberately no database container: DATABASE_URL in .env points at the managed cluster.
+# Not "openproject": that is the project name of the local development stack.
+name: openproject-prod
+
+x-app: &app
+  image: ${OPENPROJECT_IMAGE:?set OPENPROJECT_IMAGE in .env}
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    RAILS_ENV: production
+    OPENPROJECT_HTTPS: "true"
+    OPENPROJECT_RAILS__CACHE__STORE: file_store
+    OPENPROJECT_COLLABORATIVE__EDITING__HOCUSPOCUS__URL: ""
+    USE_JEMALLOC: "true"
+  volumes:
+    - assets:/var/openproject/assets
+  networks:
+    - backend
+
+services:
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      OPENPROJECT_HOST__NAME: ${OPENPROJECT_HOST__NAME:?set OPENPROJECT_HOST__NAME in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    networks:
+      - frontend
+      - backend
+
+  # One-shot: loads the schema on an empty database, otherwise migrates, then seeds.
+  # Runs before web on every `up`, so an image bump migrates first.
+  seeder:
+    <<: *app
+    restart: "no"
+    command: ./docker/prod/seeder
+
+  web:
+    <<: *app
+    command: ./docker/prod/web
+    expose:
+      - "8080"
+    depends_on:
+      seeder:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-H", "Host: ${OPENPROJECT_HOST__NAME}", "http://localhost:8080/health_checks/default"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+
+  worker:
+    <<: *app
+    command: ./docker/prod/worker
+    depends_on:
+      seeder:
+        condition: service_completed_successfully
+
+volumes:
+  assets:
+  caddy_data:
+  caddy_config:
+
+networks:
+  frontend:
+  backend:

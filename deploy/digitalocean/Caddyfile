@@ -1,0 +1,13 @@
+{$OPENPROJECT_HOST__NAME} {
+	encode zstd gzip
+
+	# Health checks disclose internals and are only needed by the container healthcheck,
+	# which talks to web:8080 directly.
+	@health path /health_check*
+	respond @health 404
+
+	reverse_proxy web:8080 {
+		# OpenProject trusts this header for rate limiting; a client must not be able to set it.
+		header_up -X-Real-IP
+	}
+}
