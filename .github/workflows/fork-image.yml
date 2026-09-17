@@ -1,8 +1,9 @@
 name: Build fork image
 
 # Builds the production "slim" image from this fork and pushes it to GHCR.
-# Only needed when production must run code that is not in the official OpenProject image.
-# Manual on purpose: the build takes a long time and should not run on every push.
+# Production needs it: the fork's MCP entitlement and project setup tools are not in the official image.
+# Manual on purpose: the build is long. Pick the branch or tag to build in the "Run workflow" dialog,
+# and build from a stable-release based branch rather than dev (see deploy/digitalocean/README.md).
 on:
   workflow_dispatch:
     inputs:
@@ -43,6 +44,7 @@ jobs:
           push: true
           tags: |
             ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
-            ${{ steps.meta.outputs.image }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Summary
+        run: echo "Pushed \`${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}\` from \`${GITHUB_REF_NAME}\`. Put it in OPENPROJECT_IMAGE." >> "$GITHUB_STEP_SUMMARY"

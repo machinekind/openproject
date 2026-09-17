@@ -13,13 +13,36 @@ control panel, not migrations.
 
 ## Which image
 
-`OPENPROJECT_IMAGE` in `.env` decides what runs.
+`OPENPROJECT_IMAGE` in `.env` decides what runs. It has no default.
 
-- **Official Community image, the default:** `openproject/openproject:17-slim`. Nothing to build.
-  AI access works through an external MCP adapter against the REST API, see the repository's MCP setup notes.
-- **This fork's code:** run the "Build fork image" workflow (Actions tab, manual), then set
-  `OPENPROJECT_IMAGE=ghcr.io/<owner>/openproject:<tag>`. For a private package, run
-  `docker login ghcr.io` on the Droplet once with a read-only token.
+- **This fork's image, the normal case.** The fork enables the built-in MCP server without an Enterprise
+  token and adds project, group, user and membership tools. That code only exists in an image built from
+  the fork. Run the "Build fork image" workflow (Actions tab, manual, pick the branch to build), then set
+  `OPENPROJECT_IMAGE=ghcr.io/machinekind/openproject:<tag>` with the tag from the workflow summary.
+  GHCR packages start private: either make the package public, or run `docker login ghcr.io` on the
+  Droplet once with a token that has `read:packages`.
+- **The official image**, `openproject/openproject:<version>-slim`, runs on this stack unchanged. Its
+  `/mcp` endpoint answers 404 without a licence.
+
+### Build from a stable base, not from `dev`
+
+The fork's `dev` follows upstream's development line, which is an unreleased major version. Its database
+migrations are ahead of every official release, so a production database created from it cannot move to an
+official image later, and it carries unreleased bugs. Build production images from a branch that is an
+upstream release tag plus the fork's commits. Replaying the fork's commits onto `v17.8.0` needed one
+trivial conflict resolution in `config/initializers/mcp.rb`. Pin the image tag; update by building a new
+tag and changing `.env`.
+
+## MCP in production
+
+- The endpoint is `https://<host>/mcp`. Caddy proxies it like any other path.
+- Each person authenticates as themselves, with a personal API token (Basic auth, user `apikey`) or, for
+  shared clients, OAuth with the `mcp` scope. Their OpenProject permissions apply to every tool call.
+- The server and each tool can be switched off under Administration, AI, Model Context Protocol.
+  `create_user` is the sensitive one; it still requires the user-management permission.
+- The seeder step of every deploy creates the configuration rows for new tools, so tools added by an image
+  update appear without manual work.
+- See `MCP_SETUP.md` in the repository root for client configuration.
 
 ## First deployment
 

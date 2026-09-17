@@ -4,6 +4,7 @@ package_update: true
 packages:
   - ca-certificates
   - curl
+  - rclone
   - ufw
   - unattended-upgrades
 swap:

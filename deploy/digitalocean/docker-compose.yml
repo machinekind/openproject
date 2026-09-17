@@ -3,7 +3,7 @@
 name: openproject
 
 x-app: &app
-  image: ${OPENPROJECT_IMAGE:-openproject/openproject:17-slim}
+  image: ${OPENPROJECT_IMAGE:?set OPENPROJECT_IMAGE in .env}
   restart: unless-stopped
   env_file: .env
   environment:
