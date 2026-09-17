@@ -77,9 +77,9 @@ module McpTools
       result = self.class.create_service.new(user: current_user).call(**service_arguments(attributes))
 
       if result.success?
-        Success(self.class.render_representer.create(result.result, current_user:, embed_links: true))
+        self.class.render_representer.create(result.result, current_user:, embed_links: true)
       else
-        Failure(result.message)
+        { error: result.message }
       end
     end
 

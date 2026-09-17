@@ -9,9 +9,8 @@ Protocol (MCP)**.
 
 Connect directly to `http://localhost:3000/mcp` for local development. A deployed
 instance uses its own HTTPS URL ending in `/mcp`. No external MCP adapter is
-required. Additional project, group, user, membership, and role tools are provided
-separately by [PR #2](https://github.com/machinekind/openproject/pull/2). They use
-OpenProject's normal contracts and permissions and are not needed to connect.
+required. The additional project, group, user, membership, and role tools in this
+fork use OpenProject's normal contracts and permissions.
 
 ## Authentication
 
@@ -61,9 +60,8 @@ reconnect the MCP client after changing configuration.
 
 ## Verification and workflow
 
-Call `current_user` and `search_projects`. If PR #2 is also installed, verify
-`list_roles` and check that its project setup tools are listed and enabled.
-Work-package tools accept API v3 payloads in
+Call `current_user`, `search_projects`, and `list_roles`. Check that the project
+setup tools are listed and enabled. Work-package tools accept API v3 payloads in
 their `data` argument; updates also need the work package `id` and its current
 `lockVersion`. Writes execute immediately; the external adapter's `confirm`
 argument is not part of these tools.

@@ -37,12 +37,10 @@ module McpTools
     input_schema(additionalProperties: false, properties: {})
 
     def call
-      Success(
-        API::V3::Roles::RoleCollectionRepresenter.new(
-          Role.givable.order(:builtin, :position),
-          self_link: "/api/v3/roles",
-          current_user:
-        )
+      API::V3::Roles::RoleCollectionRepresenter.new(
+        Role.givable.order(:builtin, :position),
+        self_link: "/api/v3/roles",
+        current_user:
       )
     end
   end

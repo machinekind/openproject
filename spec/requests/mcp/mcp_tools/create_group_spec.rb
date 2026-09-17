@@ -71,7 +71,7 @@ RSpec.describe McpTools::CreateGroup do
     tool_config.save!
   end
 
-  context "when the mcp_server enterprise feature is enabled", with_ee: %i[mcp_server] do
+  context "when the MCP server is enabled" do
     it_behaves_like "MCP text tool"
 
     it "creates a new group with the given members" do
@@ -88,6 +88,15 @@ RSpec.describe McpTools::CreateGroup do
       expect(result_item.to_json).to match_json_schema.from_docs("group_model")
     end
 
+    context "when the user lacks permission to create groups" do
+      let(:user) { create(:user) }
+
+      it "rejects the request without creating a group" do
+        expect { mcp_request }.not_to change(Group, :count)
+        expect(result_item.fetch("error")).to eq("may not be accessed.")
+      end
+    end
+
     context "when the name is missing" do
       let(:call_args) { { data: {} } }
 
@@ -102,7 +111,9 @@ RSpec.describe McpTools::CreateGroup do
     end
   end
 
-  context "when the mcp_server enterprise feature is disabled" do
+  context "when the MCP server is disabled" do
+    let(:server_config) { create(:mcp_configuration, identifier: "mcp_server", enabled: false) }
+
     it "responds with a 404" do
       mcp_request
       expect(last_response).to have_http_status(404)
