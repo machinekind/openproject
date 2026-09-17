@@ -23,8 +23,10 @@ export PGURL="${DATABASE_URL%%&pool=*}"
 # Write to .part and rename, so an interrupted run never leaves a truncated file that looks complete.
 docker run --rm -e PGURL postgres:17 sh -c 'exec pg_dump "$PGURL" -x -O -Fc' > "$DEST/db-$STAMP.dump.part"
 mv "$DEST/db-$STAMP.dump.part" "$DEST/db-$STAMP.dump"
+# The archive is written inside a container, where this script's umask does not apply.
 docker run --rm -v openproject-prod_assets:/assets:ro -v "$DEST":/out alpine \
-  tar -czf "/out/assets-$STAMP.tar.gz.part" -C /assets .
+  sh -c "umask 077 && tar -czf '/out/assets-$STAMP.tar.gz.part' -C /assets ."
+chmod 600 "$DEST/assets-$STAMP.tar.gz.part"
 mv "$DEST/assets-$STAMP.tar.gz.part" "$DEST/assets-$STAMP.tar.gz"
 # Database dumps are small: keep a week. Attachment archives are full copies: keep two locally,
 # otherwise local backups grow to seven times the attachment size and fill the disk.
