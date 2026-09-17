@@ -1,108 +1,84 @@
 ---
 name: openproject-work-packages
-description: Create and structure OpenProject work packages (tasks, milestones, epics, features, bugs, user stories, summary tasks) through the openproject-local Community MCP integration, including parents, relations, assignees, dates, versions, projects, groups and memberships. Use whenever the user asks to add tasks, tickets, issues, milestones, epics or a plan to OpenProject, to put work under a milestone or parent, to set up a project or team, or mentions Wojtek or any project tracked in this instance, even without saying "work package" or "MCP".
+description: Create and structure OpenProject work packages (tasks, milestones, epics, features, bugs, user stories, summary tasks) through the openproject-local MCP server, including parents, milestone relations, assignees, dates, versions and the project, group, user and membership tools that a new project needs first. Use this whenever the user asks to add tasks, tickets, issues, milestones, epics or a plan to OpenProject, to put work under a milestone or parent, to set up a project or team in OpenProject, or mentions Wojtek or any project tracked in this instance, even if they do not say "work package" or "MCP".
 ---
 
-# OpenProject work packages via Community MCP
+# OpenProject work packages via MCP
 
-A work package is a tracked item. Its type controls the available fields and
-whether it can contain children. Use the independent `openproject-ce-mcp` 0.4.0
-server registered as `openproject-local`. It calls API v3 at
-`http://localhost:3000`; the built-in Enterprise `/mcp` endpoint is not needed.
-If its tools are missing, use the `openproject-mcp-connect` skill first.
+A "work package" is OpenProject's word for any tracked item. Its **type** (Task, Milestone, Epic, ...) decides which fields it has, whether it is a single date or a span, and which projects may hold it. Most mistakes come from the type rules, so read the type table before creating anything.
 
-The tools take named arguments, not raw REST payloads or a `data` wrapper. Inspect
-the connected tool schema before using an argument. Never guess IDs.
+The MCP server is the running OpenProject at `http://localhost:3000/mcp`, registered in Codex and Claude Code as `openproject-local`. Its tools take the same JSON as the REST API v3, wrapped in each tool's arguments. If no `mcp__openproject-local__*` tools are available, connect first with the `openproject-mcp-connect` skill. This fork enables only the `mcp_server` entitlement without a license token; other Enterprise features retain their token checks.
+
+Project, group, user, membership, and role tools require the separate changes in [PR #2](https://github.com/machinekind/openproject/pull/2). Check the available tool list before using them. If they are absent, use the OpenProject UI or API v3 for project/team setup, then continue with the built-in work-package tools.
 
 ## Workflow
 
-1. Resolve the project with `list_projects(search: "Wojtek")`. Keep its identifier
-   or numeric ID. Follow `next_offset` when a list is paginated.
-2. Call `list_types(project: "wojtek")` or
-   `get_project_work_package_context(project: "wojtek", type: "Task")` to find the
-   enabled types and creation context.
-3. Resolve people with `list_users(search: "Marcin")` and check
-   `list_project_memberships(project: "wojtek")`. An assignee must be a member
-   directly or through a group with an assignable role.
-4. Call `create_work_package` for a preview. Check `ready`, `validation_errors`,
-   and the resolved payload. For an authorized change, repeat the same arguments
-   with `confirm: true`. Apply this two-call pattern to other writes as well.
-   The protocol flag does not require another user prompt when the user has
-   already authorized the change. A preview alone has not saved anything.
-5. Create parents before children, using the returned ID as `parent` on children.
-6. Verify with `get_work_package` or `list_work_packages(project: "wojtek")`.
+1. **Resolve the project.** Call `search_projects` with the name and keep the numeric `id`. If nothing matches, create it with `create_project` (see "Setting up a project" below).
+2. **Resolve the type.** Call `list_types` once and map names to ids. Never guess ids; they differ between instances.
+3. **Resolve people.** Call `search_users` for the assignee. An assignee must already be a member of the project, either directly or through a group. If they are not, add them with `create_membership` first, otherwise the create fails with "Assignee is invalid".
+4. **Create the items** with `create_work_package`. Create parents before children so you have the parent id.
+5. **Link milestones with relations, not parents.** See "Milestones".
+6. **Verify** with `search_work_packages` filtered by `project_id` and report ids and subjects back to the user.
 
-## Tasks and updates
+## Type rules
 
-Example arguments for `create_work_package` (resolve the assignee ID first):
+| Type | Dates | Can be a parent | Notes |
+|---|---|---|---|
+| Task | startDate, dueDate | yes | The default for "add a task". |
+| Milestone | `date` only | **no** | Setting a milestone as `parent` fails with "Parent cannot be a milestone." |
+| Summary task | span, rolled up from children | yes | Use as the container when the user wants a phase or release with tasks under it. |
+| Epic | span | yes | Large theme; usually holds features. |
+| Feature | span | yes | A deliverable; usually holds tasks. |
+| User story | span | yes | Agile requirement. |
+| Bug | span | yes | A defect. |
 
-```json
-{"project": "wojtek", "type": "Task", "subject": "New leg design", "assignee": "32", "start_date": "2026-10-01", "due_date": "2026-10-14", "estimated_time": "PT8H"}
+A project only accepts the types enabled in its settings. If a create fails with "Type is not set to one of the allowed values", the type is not enabled for that project. Projects created through the API on this dev instance start with **no types**, because the seed marks none as default. Enable them under Project settings, Work package types, or ask an admin, then retry.
+
+## Milestones
+
+Milestones are single dates and cannot contain children. When the user says "tasks under milestone X", they usually mean the tasks lead to the milestone. Model that with a `precedes` relation from each task to the milestone:
+
+```
+create_work_package_relation(from_work_package_id: <task>, to_work_package_id: <milestone>, type: "precedes")
 ```
 
-Use `description` for Markdown, `parent` for a parent work package ID, and
-`target_versions` for version IDs/names from `list_versions`. For updates, call
-`update_work_package(work_package_id: 42, ...)` with only changed fields. The
-adapter handles REST `lockVersion`; do not supply it as an MCP argument. Re-read
-the item after conflicts and verify returned dates, which can move to working days.
+The server stores it as the milestone *follows* the task. Once tasks have dates and the milestone has `scheduleManually: false`, the milestone date moves to the end of the latest task. Tell the user this is a relation, not a hierarchy, and offer a Summary task or Epic parent plus a milestone if they want both grouping and a date marker.
 
-## Types and milestones
+## Payload cheat sheet
 
-| Type | Dates | Can contain children |
-|---|---|---|
-| Task, Epic, Feature, User story, Bug | Start and due dates | Yes |
-| Summary task | Span, potentially calculated from children | Yes |
-| Milestone | Single date | No |
-
-Only enabled project types are accepted. New projects on this development
-instance may start with no enabled types. Enable the needed types under
-**Project settings → Work package types**, then retry.
-
-When tasks lead to a milestone, use `create_work_package_relation`:
+Minimal task payload (pass this object as `data` to `create_work_package`):
 
 ```json
-{"work_package_id": 42, "related_to_work_package_id": 46, "relation_type": "precedes"}
+{"subject": "New leg design",
+ "_links": {"project": {"href": "/api/v3/projects/8"},
+            "type": {"href": "/api/v3/types/1"},
+            "assignee": {"href": "/api/v3/users/32"}}}
 ```
 
-OpenProject stores this as the milestone `follows` the task, with the endpoints
-swapped. Verify the response rather than assuming the stored direction. Use a
-Summary task or Epic parent when the user wants a hierarchy.
+Add as needed: `"description": {"raw": "markdown text"}`, `"startDate": "2026-10-01"`, `"dueDate": "2026-10-14"`, `"estimatedTime": "PT8H"` (ISO 8601 duration), `"_links": {"parent": {"href": "/api/v3/work_packages/46"}, "priority": {...}, "status": {...}, "responsible": {...}, "targetVersions": [{"href": "/api/v3/versions/3"}]}`. Milestones take `"date"` instead of start and due.
 
-Version 0.4.0 does not expose the milestone `date` or `scheduleManually` write
-fields. Do not send task date arguments and assume they set a milestone date.
-Use the Community UI or API v3 for these fields; see
-[references/payloads.md](references/payloads.md).
+Updates go through `update_work_package` with `id` and `data`; put the `lockVersion` you last read inside `data`. Only send the fields that change. A 409-style conflict means someone changed it since; re-read and retry. These tools write immediately and have no `confirm` argument.
 
-## Projects, groups and memberships
+Check the returned payload for `error` before reporting success. The built-in server can return a permission or validation error in `structuredContent.error` while the MCP envelope's `isError` is false.
 
-Teams are ordinary OpenProject groups. These operations use Community API v3:
+More payload examples, relation types and the error table are in [references/payloads.md](references/payloads.md). Read it when you hit an error you do not recognise or need a field not listed above.
 
-| Need | Tool | Example arguments, before confirmation |
+## Setting up a project, team and members
+
+These additional tools are supplied by PR #2, not by the MCP entitlement change.
+
+| Need | Tool | Key payload |
 |---|---|---|
-| Project | `create_project` | `{"name": "Wojtek", "identifier": "wojtek"}` |
-| Group | `create_group` | `{"name": "Wojtek", "user_ids": [32]}` |
-| Add person to group | `update_group` | `{"group_id": 33, "add_user_ids": [32]}` |
-| Role IDs | `list_roles` | Find a project role such as Member; follow pagination. |
-| Add group or person to project | `create_membership` | `{"project": "wojtek", "principal": "33", "roles": ["Member"]}` |
+| Project | `create_project` | `{"data": {"name": "Wojtek", "identifier": "wojtek"}}`. Always a plain project workspace. |
+| Team | `create_group` | `{"data": {"name": "Wojtek", "_links": {"members": [{"href": "/api/v3/users/32"}]}}}` |
+| Person | `create_user` | `{"data": {"login": "marcin", "email": "...", "firstName": "...", "lastName": "...", "status": "invited"}}`. Invited users set their own password; this dev instance sends no mail, so an admin sets one at `/users/<id>/edit`. |
+| Role ids | `list_roles` | Member is the normal choice for a team. |
+| Add to project | `create_membership` | `{"data": {"_links": {"principal": {"href": "/api/v3/groups/33"}, "project": {"href": "/api/v3/projects/8"}, "roles": [{"href": "/api/v3/roles/4"}]}}}` |
 
-Resolve existing users and groups before creating duplicates. If the user asks to
-create an account, `create_user` accepts `login`, `email`, `firstname`, `lastname`,
-and `status: "invited"`. Invited accounts do not require a password; delivery
-depends on the instance's mail configuration. User creation can send an
-invitation, so it needs the user's instruction to invite/create that person.
+Order: user, then group with that user, then membership of the group in the project, then work packages. Adding a group to a project gives every member of the group the role, including people added later.
 
-Order: existing or requested user, group, project membership, work packages.
-Group membership gives its users the assigned project role, including users
-added to the group later. Admin tools must be enabled in the integration, and
-the API user needs the corresponding OpenProject permissions.
+"Me" in this instance is whoever the API token belongs to; call `current_user` if unsure. Do not assume the user has an account with their own name.
 
-"Me" means the API token owner. Call `get_current_user`; do not infer the account
-from the person speaking to the assistant.
+## Reporting back
 
-## Reporting
-
-Return created IDs and subjects, the project URL
-(`http://localhost:3000/projects/<identifier>/work_packages`), and any unresolved
-limitations. Distinguish previews from saved changes and relations from parent
-hierarchies. Consult [references/payloads.md](references/payloads.md) for errors
-and fields that need the REST API.
+List what was created as a short table of id and subject, name the project URL (`http://localhost:3000/projects/<identifier>/work_packages`), and state plainly anything you could not do, such as a type that was not enabled. Do not claim a hierarchy exists when you created relations.

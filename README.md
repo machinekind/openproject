@@ -4,7 +4,7 @@
 ![GitHub branch checks state](https://img.shields.io/github/checks-status/opf/openproject/dev)
 [![Github Tests](https://github.com/opf/openproject/actions/workflows/test-core.yml/badge.svg?branch=dev)](https://github.com/opf/openproject/actions/workflows/test-core.yml)
 
-> **Modified fork notice (2026-09-17).** This is an unaffiliated fork of [opf/openproject](https://github.com/opf/openproject) maintained by machinekind, with additional MCP project setup tools and agent workflow instructions. Enterprise features retain the upstream token checks. For AI access to Community projects, groups, memberships, and tasks, see [Community MCP setup](COMMUNITY_MCP.md). It is not endorsed by or associated with OpenProject GmbH. Distributed under the GNU GPL v3; see [LICENSE](LICENSE) and [COPYRIGHT](COPYRIGHT).
+> **Modified fork notice (2026-09-17).** This is an unaffiliated fork of [opf/openproject](https://github.com/opf/openproject) maintained by machinekind. It enables the built-in MCP server without an Enterprise token and provides agent workflow instructions. Other Enterprise features retain the upstream token checks. Additional MCP project setup tools are developed separately in [PR #2](https://github.com/machinekind/openproject/pull/2). See [MCP setup](MCP_SETUP.md). It is not endorsed by or associated with OpenProject GmbH. Distributed under the GNU GPL v3; see [LICENSE](LICENSE) and [COPYRIGHT](COPYRIGHT).
 
 **We empower teams to achieve great things together for the good of society.**
 

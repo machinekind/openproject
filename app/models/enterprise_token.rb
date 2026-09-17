@@ -54,6 +54,8 @@ class EnterpriseToken < ApplicationRecord
     end
 
     def allows_to?(feature)
+      return true if feature.to_s == "mcp_server"
+
       active_tokens.any? { |token| Authorization::EnterpriseService.new(token).call(feature).result }
     end
 
@@ -66,11 +68,11 @@ class EnterpriseToken < ApplicationRecord
     end
 
     def available_features
-      active_tokens.map(&:available_features).inject(Set.new, :|)
+      active_tokens.map(&:available_features).inject(Set[:mcp_server], :|)
     end
 
     def non_trialling_features
-      active_non_trial_tokens.map(&:available_features).inject(Set.new, :|)
+      active_non_trial_tokens.map(&:available_features).inject(Set[:mcp_server], :|)
     end
 
     def trialling_features
