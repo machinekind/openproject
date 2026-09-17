@@ -6,10 +6,16 @@ There is no database to operate: DigitalOcean takes daily backups with 7-day poi
 | Piece | Default | About USD a month |
 |---|---|---|
 | Droplet `s-2vcpu-4gb`, Frankfurt, weekly image backups | app, worker, Caddy | 24 + 4.80 |
-| Managed PostgreSQL 17 `db-s-1vcpu-1gb`, same VPC | 22 connections | 15 |
+| Managed PostgreSQL 17 `db-s-1vcpu-1gb`, same VPC | 22 connections | 15.15 |
 
-For 20 or more active users move to `s-4vcpu-8gb` (48) and `db-s-1vcpu-2gb` (30). Both are resizes in the
-control panel, not migrations.
+This sizing matches upstream's "small instance" profile (up to 200 users with low concurrent activity), so
+it carries a team of 20 to 30. Upstream places 8 GB at around 500 users. A 2 GB Droplet is not viable: the
+web and worker processes alone need about 2.6 GB, and a deploy peaks near 3.2 GB while the seeder migrates.
+
+Resize on measured signals, not on headcount: sustained swap use (`free -m`), load average staying above 2,
+or a failing `/health_checks/worker_backed_up`. The next steps are `s-4vcpu-8gb` (48) and `db-s-1vcpu-2gb`
+(30.45). Both are resizes in the control panel, not migrations. Do not enable DigitalOcean's connection
+pooler: GoodJob needs session-level advisory locks and LISTEN/NOTIFY, which transaction pooling breaks.
 
 ## Which image
 

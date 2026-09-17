@@ -11,7 +11,7 @@ set -euo pipefail
 : "${SSH_KEY_ID:?set SSH_KEY_ID (see: doctl compute ssh-key list)}"
 REGION="${REGION:-fra1}"
 NAME="${NAME:-openproject}"
-DROPLET_SIZE="${DROPLET_SIZE:-s-2vcpu-4gb}"      # s-4vcpu-8gb once you pass ~20 active users
+DROPLET_SIZE="${DROPLET_SIZE:-s-2vcpu-4gb}"      # enough for 20-30 people; resize on sustained swap or load > 2
 DB_SIZE="${DB_SIZE:-db-s-1vcpu-1gb}"             # db-s-1vcpu-2gb raises the connection cap from 22 to 47
 DB_VERSION="${DB_VERSION:-17}"
 HERE="$(cd "$(dirname "$0")" && pwd)"

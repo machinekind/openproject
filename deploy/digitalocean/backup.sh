@@ -18,7 +18,10 @@ URL="${DATABASE_URL%%&pool=*}"
 docker run --rm postgres:17 pg_dump "$URL" -x -O -Fc > "$DEST/db-$STAMP.dump"
 docker run --rm -v openproject_assets:/assets:ro -v "$DEST":/out alpine \
   tar -czf "/out/assets-$STAMP.tar.gz" -C /assets .
-find "$DEST" -type f -mtime +7 -delete
+# Database dumps are small: keep a week. Attachment archives are full copies: keep two locally,
+# otherwise local backups grow to seven times the attachment size and fill the disk.
+find "$DEST" -type f -name 'db-*.dump' -mtime +7 -delete
+find "$DEST" -type f -name 'assets-*.tar.gz' -mtime +1 -delete
 if [ -n "${RCLONE_REMOTE:-}" ]; then
   rclone copy "$DEST" "$RCLONE_REMOTE" --include "*-$STAMP.*"
 fi
