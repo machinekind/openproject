@@ -1,0 +1,27 @@
+#cloud-config
+# First-boot setup for the Droplet: Docker, a swap file as OOM insurance, a firewall, unattended security updates.
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - ufw
+  - unattended-upgrades
+swap:
+  filename: /swapfile
+  size: 2G
+  maxsize: 2G
+runcmd:
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  - ufw default deny incoming
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443
+  - ufw --force enable
+  - mkdir -p /srv/openproject
+  - sysctl -w vm.swappiness=10
+  - echo "vm.swappiness=10" > /etc/sysctl.d/60-swappiness.conf

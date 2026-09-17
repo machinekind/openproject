@@ -1,0 +1,4 @@
+{$OPENPROJECT_HOST__NAME} {
+	encode zstd gzip
+	reverse_proxy web:8080
+}
