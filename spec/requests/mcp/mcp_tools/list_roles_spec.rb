@@ -1,0 +1,83 @@
+# frozen_string_literal: true
+
+#-- copyright
+# OpenProject is an open source project management software.
+# Copyright (C) the OpenProject GmbH
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License version 3.
+#
+# OpenProject is a fork of ChiliProject, which is a fork of Redmine. The copyright follows:
+# Copyright (C) 2006-2013 Jean-Philippe Lang
+# Copyright (C) 2010-2013 the ChiliProject Team
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+#
+
+require "spec_helper"
+
+RSpec.describe McpTools::ListRoles do
+  subject(:mcp_request) do
+    header "Authorization", "Bearer #{access_token.plaintext_token}"
+    header "Content-Type", "application/json"
+    post "/mcp", request_body.to_json
+  end
+
+  let(:access_token) { create(:oauth_access_token, scopes: "mcp", resource_owner: user) }
+  let(:user) { create(:admin) }
+  let!(:role) { create(:project_role, name: "Robot wrangler") }
+  let(:request_body) do
+    {
+      jsonrpc: "2.0",
+      id: "Test-Request",
+      method: "tools/call",
+      params: {
+        name: "list_roles",
+        arguments: {}
+      }
+    }
+  end
+  let(:parsed_results) { JSON.parse(last_response.body).fetch("result") }
+  let(:result_item) { parsed_results.fetch("structuredContent") }
+
+  let(:server_config) { create(:mcp_configuration, identifier: "mcp_server") }
+  let(:tool_config) { create(:mcp_configuration, identifier: described_class.qualified_name) }
+
+  before do
+    server_config.save!
+    tool_config.save!
+  end
+
+  context "when the MCP server is enabled" do
+    it_behaves_like "MCP text tool"
+
+    it "lists the givable roles" do
+      mcp_request
+
+      names = result_item.dig("_embedded", "elements").pluck("name")
+      expect(names).to include("Robot wrangler")
+      expect(result_item.dig("_embedded", "elements").first).to include("_type" => "Role")
+    end
+  end
+
+  context "when the MCP server is disabled" do
+    let(:server_config) { create(:mcp_configuration, identifier: "mcp_server", enabled: false) }
+
+    it "responds with a 404" do
+      mcp_request
+      expect(last_response).to have_http_status(404)
+    end
+  end
+end

@@ -9,8 +9,6 @@ A "work package" is OpenProject's word for any tracked item. Its **type** (Task,
 
 The MCP server is the running OpenProject at `http://localhost:3000/mcp`, registered in Codex and Claude Code as `openproject-local`. Its tools take the same JSON as the REST API v3, wrapped in each tool's arguments. If no `mcp__openproject-local__*` tools are available, connect first with the `openproject-mcp-connect` skill. This fork enables only the `mcp_server` entitlement without a license token; other Enterprise features retain their token checks.
 
-Project, group, user, membership, and role tools require the separate changes in [PR #2](https://github.com/machinekind/openproject/pull/2). Check the available tool list before using them. If they are absent, use the OpenProject UI or API v3 for project/team setup, then continue with the built-in work-package tools.
-
 ## Workflow
 
 1. **Resolve the project.** Call `search_projects` with the name and keep the numeric `id`. If nothing matches, create it with `create_project` (see "Setting up a project" below).
@@ -65,7 +63,7 @@ More payload examples, relation types and the error table are in [references/pay
 
 ## Setting up a project, team and members
 
-These additional tools are supplied by PR #2, not by the MCP entitlement change.
+These tools exist only in this fork; upstream OpenProject's MCP server cannot do them.
 
 | Need | Tool | Key payload |
 |---|---|---|

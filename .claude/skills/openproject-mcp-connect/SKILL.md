@@ -24,10 +24,8 @@ and the administrator's server/tool switches retain their normal behavior.
 4. If no valid token exists, direct the user to **My account → Access tokens**
    and have it stored in private configuration. Do not ask for a token in chat.
 5. Reconnect or restart the MCP client after changing configuration. Verify
-   `current_user` and `search_projects`. If the separate project setup tools from
-   [PR #2](https://github.com/machinekind/openproject/pull/2) are installed, also
-   verify `list_roles`, `create_project`, `create_group`, `create_user`, and
-   `create_membership` are listed when needed.
+   `current_user`, `search_projects`, and `list_roles`. Check that `create_project`,
+   `create_group`, `create_user`, and `create_membership` are listed when needed.
 6. Return to the original task, using `openproject-work-packages` for its workflow.
 
 For shared clients, use per-user OAuth with the `mcp` scope, as documented in
