@@ -39,7 +39,7 @@ RSpec.describe "MCP configuration page", :js do
     McpConfigurationSeeder.new(nil).seed!
   end
 
-  context "when the enterprise feature is enabled", with_ee: %i[mcp_server] do
+  context "without an Enterprise token" do
     context "when MCP server is enabled" do
       # rubocop:disable Rails/RedundantActiveRecordAllMethod
       let(:example_tool) { McpConfiguration.find_by(identifier: McpTools.all.first.qualified_name) }
@@ -138,14 +138,13 @@ RSpec.describe "MCP configuration page", :js do
     end
   end
 
-  context "when the enterprise feature is disabled" do
-    it "hides the entire form, but shows an enterprise banner" do
+  context "with an Enterprise token", with_ee: %i[mcp_server] do
+    it "shows the configuration form without an enterprise banner" do
       visit mcp_configurations_path
 
-      expect(page).to have_enterprise_banner(:professional)
+      expect(page).not_to have_enterprise_banner
 
-      expect(page).to have_no_test_selector("mcp-configuration--server-config-form")
-      expect(page).to have_no_test_selector("mcp-configuration--config-row-name")
+      expect(page).to have_test_selector("mcp-configuration--server-config-form")
     end
   end
 end

@@ -1,83 +1,83 @@
-# Community MCP arguments and REST fallback
+# OpenProject MCP payloads and errors
 
-These examples target `openproject-ce-mcp==0.4.0`. Use the connected schema as
-the authority for argument names. Call writes first without `confirm`, inspect
-`ready` and `validation_errors`, then repeat with `confirm: true` when authorized.
+## Work package fields
 
-## MCP examples
+All links use API v3 hrefs. Numeric ids come from the search and list tools; do not build hrefs from names.
 
-Create a task, then a child using its returned ID:
+| Field | Format | Notes |
+|---|---|---|
+| `subject` | string | Required. |
+| `description` | `{"raw": "markdown"}` | Markdown; the server renders `html`. |
+| `startDate`, `dueDate` | `"YYYY-MM-DD"` | Not valid on milestones. |
+| `date` | `"YYYY-MM-DD"` | Milestones only. |
+| `scheduleManually` | boolean | `false` lets follows relations and children drive the dates. Defaults to `true` on new items. |
+| `estimatedTime` | ISO 8601 duration, e.g. `"PT8H"`, `"P2D"` | Hours per day come from instance settings. |
+| `percentageDone` | integer 0-100 | May be derived from status depending on instance settings. |
+| `lockVersion` | integer | Required on every update; read it from the item first. |
+| `_links.project` | `/api/v3/projects/<id>` | Required on create. |
+| `_links.type` | `/api/v3/types/<id>` | Required on create; must be enabled in the project. |
+| `_links.status` | `/api/v3/statuses/<id>` | Defaults to the first status; transitions follow the workflow of the type and role. |
+| `_links.priority` | `/api/v3/priorities/<id>` | Defaults to Normal. |
+| `_links.assignee`, `_links.responsible` | `/api/v3/users/<id>` or `/api/v3/groups/<id>` | Must be a project member with an assignable role. |
+| `_links.parent` | `/api/v3/work_packages/<id>` | Any non milestone in the same or a related project. |
+| `_links.targetVersions` | array of `/api/v3/versions/<id>` | Find ids with `search_versions`. |
+| `_links.category` | `/api/v3/categories/<id>` | Optional project category. |
+| custom fields | `customFieldN` or `_links.customFieldN` | Resolve names with `search_custom_fields`. |
+
+## Examples
+
+Milestone with a date:
 
 ```json
-{"project": "wojtek", "type": "Task", "subject": "New leg design"}
-{"project": "wojtek", "type": "Task", "subject": "Print knee bracket", "parent": "50"}
+{"subject": "Wojtek V2", "date": "2026-12-15",
+ "_links": {"project": {"href": "/api/v3/projects/8"}, "type": {"href": "/api/v3/types/2"}}}
 ```
 
-Update via `update_work_package`:
+Epic, feature under it, task under the feature (three calls, each using the previous id):
 
 ```json
-{"work_package_id": 42, "start_date": "2026-10-01", "due_date": "2026-10-14", "estimated_time": "PT8H"}
+{"subject": "Locomotion", "_links": {"project": {"href": "/api/v3/projects/8"}, "type": {"href": "/api/v3/types/5"}}}
+{"subject": "New leg design", "_links": {"project": {"href": "/api/v3/projects/8"}, "type": {"href": "/api/v3/types/4"}, "parent": {"href": "/api/v3/work_packages/50"}}}
+{"subject": "Print knee bracket", "_links": {"project": {"href": "/api/v3/projects/8"}, "type": {"href": "/api/v3/types/1"}, "parent": {"href": "/api/v3/work_packages/51"}}}
 ```
 
-Add a comment via `add_work_package_comment` with `work_package_id` and `comment`.
-Send only fields to change. `description` and comments are Markdown strings.
-Dates are `YYYY-MM-DD`; durations are ISO 8601, such as `PT8H` or `PT1H30M`.
-The adapter reads the current REST `lockVersion` when updating.
+Update dates and switch to automatic scheduling:
 
-## Relations
+```json
+{"lockVersion": 2, "startDate": "2026-10-01", "dueDate": "2026-10-14", "scheduleManually": false}
+```
 
-`create_work_package_relation` takes `work_package_id`,
-`related_to_work_package_id`, `relation_type`, and optionally `lag` in days.
+Comment on an item: `create_work_package_comment` with the id and markdown text.
+
+## Relation types
+
+`create_work_package_relation` takes `from_work_package_id`, `to_work_package_id`, `type` and optional `lag` in days.
 
 | Type | Meaning | Affects scheduling |
 |---|---|---|
-| `precedes` / `follows` | Ordering | Yes, for automatically scheduled items |
-| `blocks` / `blocked` | Blocker | No |
-| `relates` | Loose link | No |
-| `duplicates` / `duplicated` | Duplicate work | No |
-| `includes` / `partof` | Loose containment | No |
-| `requires` / `required` | Dependency | No |
+| `precedes` / `follows` | Ordering. `from precedes to` is stored as `to follows from`. | Yes: a following item with automatic scheduling starts after the preceding one finishes plus lag. |
+| `blocks` / `blocked` | Cannot progress until the other is done. | No |
+| `relates` | Loose link. | No |
+| `duplicates` / `duplicated` | Same work reported twice. | No |
+| `includes` / `partof` | Loose containment without hierarchy. | No |
+| `requires` / `required` | Dependency without ordering. | No |
 
-OpenProject canonicalizes inverse relations, swapping their endpoints. Read the
-returned type and endpoints to confirm direction. Hierarchy instead uses `parent`
-on the child; a milestone cannot be a parent.
+Hierarchy is not a relation; set `_links.parent` on the child instead.
 
-## Fields requiring REST API v3 or the UI
+## Errors and what they mean
 
-The Community adapter's write schema does not cover every REST field. In 0.4.0,
-milestone `date` and `scheduleManually` require the UI or direct API calls.
-Authenticate API calls using the configured token privately; do not log it or
-put it in command arguments. Use `/api/v3`, never `/mcp`, for this fallback.
+| Error text | Cause | Fix |
+|---|---|---|
+| Type is not set to one of the allowed values. | Type not enabled in the project. | Enable it in Project settings, Work package types. Projects created via the API here start with none. |
+| Parent cannot be a milestone. | Milestones cannot hold children. | Use a `precedes` relation to the milestone, or a Summary task or Epic as parent. |
+| Assignee is invalid. / Responsible is invalid. | Person is not a project member with an assignable role. | Add them with `create_membership`, or add their group. |
+| Project is invalid. | Wrong id, or the token's user cannot see it. | Re-run `search_projects`. |
+| Subject can't be blank. | Missing subject. | Add one. |
+| lockVersion conflict | Item changed since read. | Re-read, take the new `lockVersion`, resend. |
+| Status transition not allowed | Workflow forbids the jump for this type and role. | Call `list_statuses`, pick an allowed next status, or leave status unset on create. |
+| Workspace type is not set to one of the allowed values. | Only from raw API project creation. | Use `create_project`, which sets the workspace type. |
+| MCP server is not available. (HTTP 404) | MCP disabled in Administration. | Check Administration, AI, Model Context Protocol. This fork enables only the MCP entitlement without an Enterprise token. |
 
-For a milestone, send this to `PATCH /api/v3/work_packages/<id>` using the
-`lockVersion` from a fresh `GET`:
+## Group, user and membership payloads
 
-```json
-{"lockVersion": 2, "date": "2026-12-15"}
-```
-
-To enable automatic scheduling on an existing item:
-
-```json
-{"lockVersion": 2, "scheduleManually": false}
-```
-
-Send these raw fields only to API v3, not to Community MCP tools. A subsequent
-write needs the new `lockVersion`. Re-read after a conflict and verify the saved
-date, especially when scheduling dependencies are present.
-
-## Errors
-
-| Error | Action |
-|---|---|
-| Type is not set to one of the allowed values | Check `list_types(project: ...)`; enable the type in project settings. |
-| Parent cannot be a milestone | Use a relation to the milestone or a Summary task/Epic parent. |
-| Assignee or responsible is invalid | Add project membership with an assignable role, directly or through a group. |
-| Project is invalid or forbidden | Resolve it again with `list_projects`; check the API user's permissions and the integration's read/write project lists. |
-| Subject can't be blank | Supply a nonempty subject. |
-| Conflict / stale lock version | Re-read and retry against current data. |
-| Status transition not allowed | Inspect the work package context and workflow; choose an allowed status. |
-| Admin tools missing | Check `OPENPROJECT_ENABLE_ADMIN_READ` and `OPENPROJECT_ENABLE_ADMIN_WRITE`, then reconnect. |
-| Unknown argument `data`, `_links`, or `lockVersion` | A built-in MCP/REST payload was sent to a Community tool. Use its named arguments. |
-| `ready: false` without an MCP error | The preview failed validation. Resolve `validation_errors`; do not confirm. |
-| HTTP 404 from `/mcp` | An old HTTP registration is still active. Use the Community stdio connection. |
+Group members are set through the `members` link array on create or update. Invited users (`"status": "invited"`) need no password. Active users need `"password"`. A membership needs a principal (user or group), a project and at least one role; `list_roles` gives the ids and Member is the default choice for a team.

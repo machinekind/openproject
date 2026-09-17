@@ -1,62 +1,48 @@
 ---
 name: openproject-mcp-connect
-description: Connect Claude Code, Codex or another local MCP client to OpenProject Community through the independent openproject-ce-mcp API v3 adapter. Use when openproject-local tools are missing or failing, the user asks to connect OpenProject or set up MCP, or an old /mcp connection returns 401 or 404. Also use before openproject-work-packages when its MCP tools are unavailable.
+description: Connect Codex, Claude Code or another MCP client to this fork's built-in OpenProject MCP endpoint and verify project, group, membership and task tools. Use when openproject-local tools are missing or failing, the user asks to connect OpenProject or set up MCP, or the connection returns 401 or 404.
 ---
 
-# Connect OpenProject Community MCP
+# Connect the built-in OpenProject MCP server
 
-Register `openproject-ce-mcp==0.4.0` as a local stdio server named
-`openproject-local`. It calls the public REST API at the configured base URL,
-`http://localhost:3000` for this development instance. Groups, memberships,
-projects and work packages do not need an Enterprise unlock. Preserve upstream
-Enterprise checks, including the check on the built-in `/mcp` endpoint.
+Use the HTTP endpoint `http://localhost:3000/mcp`, registered as
+`openproject-local`. This fork enables only the MCP entitlement without an
+Enterprise token. Other Enterprise features, authentication, user permissions,
+and the administrator's server/tool switches retain their normal behavior.
 
-## Steps
+## Workflow
 
-1. If `mcp__openproject-local__get_current_user` is available, call it. A returned
-   user confirms the connection; continue the task that needed it.
-2. Read [Community MCP setup](../../../COMMUNITY_MCP.md) for installation, Codex
-   and Claude configuration, environment variables, and project access lists.
-   Reuse an existing valid API token privately when authorized. Never print
-   token-bearing configuration or credentials into chat, logs or shell arguments.
-3. Install the pinned adapter if needed:
+1. If `mcp__openproject-local__current_user` is available, call it. A returned
+   user confirms the connection; continue the original task.
+2. Read [MCP setup](../../../MCP_SETUP.md) for Codex and Claude configuration.
+   Replace a previous `openproject-ce-mcp` stdio registration with the built-in
+   HTTP endpoint, preserving other settings.
+3. Reuse an existing valid API token privately when authorized. API tokens use
+   Basic authentication with username `apikey` and the token as password. Keep
+   the resulting Authorization header in private local configuration, never
+   logs, chat, command arguments, or committed files.
+4. If no valid token exists, direct the user to **My account → Access tokens**
+   and have it stored in private configuration. Do not ask for a token in chat.
+5. Reconnect or restart the MCP client after changing configuration. Verify
+   `current_user` and `search_projects`. If the separate project setup tools from
+   [PR #2](https://github.com/machinekind/openproject/pull/2) are installed, also
+   verify `list_roles`, `create_project`, `create_group`, `create_user`, and
+   `create_membership` are listed when needed.
+6. Return to the original task, using `openproject-work-packages` for its workflow.
 
-   ```sh
-   uv tool install --python python3.11 'openproject-ce-mcp==0.4.0'
-   ```
-
-4. Configure a stdio command pointing to the installed executable. Set
-   `OPENPROJECT_BASE_URL` to the instance URL without `/mcp` or `/api/v3`, and
-   `OPENPROJECT_API_TOKEN` to its personal API token. Set explicit
-   `OPENPROJECT_READ_PROJECTS` and `OPENPROJECT_WRITE_PROJECTS` lists; empty lists
-   deny access. `*` permits all projects visible to the API user.
-5. Enable `OPENPROJECT_ENABLE_ADMIN_READ` and `OPENPROJECT_ENABLE_ADMIN_WRITE`
-   when group management is requested. These are instance-wide operations and
-   still require permission in OpenProject. Project lists do not scope them.
-6. Replace an existing HTTP `openproject-local` registration rather than creating
-   a duplicate. Preserve other client settings. Keep actual configuration local
-   and ignored by Git, with token-bearing files readable only by the owner.
-7. Reconnect or restart the client. Verify `get_current_user`, `list_projects`,
-   `list_groups`, and `list_roles`. For a known project, verify
-   `list_project_memberships` and `list_work_packages`.
-
-When no valid token is available, direct the user to **My account → Access
-tokens** to create one and save it in private configuration. Do not ask for the
-token in chat. The integration acts as the token owner.
+For shared clients, use per-user OAuth with the `mcp` scope, as documented in
+[OpenProject's MCP guide](https://www.openproject.org/docs/system-admin-guide/integrations/mcp-server/).
 
 ## Troubleshooting
 
 | Symptom | Action |
 |---|---|
-| Executable not found | Use its absolute installed path; GUI clients can have a different `PATH`. |
-| Connection refused | Start the local OpenProject app and verify the base URL. |
-| API returns 401 | Check the token is valid and API token authentication is enabled. Never log the token. |
-| HTTP 404 from `/mcp` | Replace the old HTTP registration with Community stdio configuration. |
-| Project absent or write rejected | Check project read/write lists and the API user's permissions. |
-| Group tools missing | Enable admin read/write in the adapter and reconnect. |
-| `data` or other raw REST fields rejected | Use the Community tool's typed arguments. |
-| Preview succeeds but nothing is saved | Inspect the preview, then call with `confirm: true` for an authorized change. |
+| Connection refused | Start the local OpenProject app and check the URL. |
+| HTTP 401 | Check the private API credential and whether API tokens are enabled. For OAuth, verify the `mcp` scope. |
+| HTTP 404, MCP server is not available | Check **Administration → AI → Model Context Protocol → Enabled**. This fork does not require an Enterprise token for MCP. |
+| Project setup tools missing | Check the running branch contains the tools and their configuration rows exist and are enabled. The MCP configuration seeder can initialize missing rows. |
+| Tool disabled | Check the tool's MCP administration setting; preserve intentional restrictions. |
+| Permission error | The API user needs the normal OpenProject permission. Group/user creation normally needs administrative permissions. |
+| Unknown `confirm` or Community adapter argument | Inspect the built-in tool schema. Create/update tools take API payloads under `data`; writes execute immediately. |
 
-The `confirm` flag is a protocol step. It does not require another user prompt
-when the requested action is already authorized. Return to the original task
-once the connection is verified; the work package skill describes its tools.
+Do not change unrelated Enterprise entitlements when fixing this connection.
