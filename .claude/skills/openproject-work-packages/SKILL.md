@@ -1,13 +1,15 @@
 ---
 name: openproject-work-packages
-description: Create and structure OpenProject work packages (tasks, milestones, epics, features, bugs, user stories, summary tasks) through the openproject-local MCP server, including parents, milestone relations, assignees, dates, versions and the project, group, user and membership tools that a new project needs first. Use this whenever the user asks to add tasks, tickets, issues, milestones, epics or a plan to OpenProject, to put work under a milestone or parent, to set up a project or team in OpenProject, or mentions Wojtek or any project tracked in this instance, even if they do not say "work package" or "MCP".
+description: Create and structure OpenProject work packages (tasks, milestones, epics, features, bugs, user stories, summary tasks) through a connected OpenProject MCP server, local or deployed, including parents, milestone relations, assignees, dates, versions and the project, group, user and membership tools that a new project needs first. Use this whenever the user asks to add tasks, tickets, issues, milestones, epics or a plan to OpenProject, to put work under a milestone or parent, to set up a project or team in OpenProject, or mentions Wojtek or any project tracked in this instance, even if they do not say "work package" or "MCP".
 ---
 
 # OpenProject work packages via MCP
 
 A "work package" is OpenProject's word for any tracked item. Its **type** (Task, Milestone, Epic, ...) decides which fields it has, whether it is a single date or a span, and which projects may hold it. Most mistakes come from the type rules, so read the type table before creating anything.
 
-The MCP server is the running OpenProject at `http://localhost:3000/mcp`, registered in Codex and Claude Code as `openproject-local`. Its tools take the same JSON as the REST API v3, wrapped in each tool's arguments. If no `mcp__openproject-local__*` tools are available, connect first with the `openproject-mcp-connect` skill. This fork enables only the `mcp_server` entitlement without a license token; other Enterprise features retain their token checks.
+The tools come from an OpenProject instance's built-in MCP server and are named `mcp__openproject-<instance>__*`, for example `openproject-local` for development and `openproject-prod` for production. They take the same JSON as the REST API v3, wrapped in each tool's arguments. If no such tools are available, connect first with the `openproject-mcp-connect` skill.
+
+**Know which instance you are writing to.** Call `current_user` first; its result names the instance's URL. If tools for more than one instance are connected, confirm the target with the user before any write. Ids differ between instances, so never reuse an id learned on another one.
 
 ## Workflow
 
@@ -30,7 +32,9 @@ The MCP server is the running OpenProject at `http://localhost:3000/mcp`, regist
 | User story | span | yes | Agile requirement. |
 | Bug | span | yes | A defect. |
 
-A project only accepts the types enabled in its settings. If a create fails with "Type is not set to one of the allowed values", the type is not enabled for that project. Projects created through the API on this dev instance start with **no types**, because the seed marks none as default. Enable them under Project settings, Work package types, or ask an admin, then retry.
+A project only accepts the types enabled in its settings. If a create fails with "Type is not set to one of the allowed values", the type is not enabled for that project. A project created through the API starts with **no types** when the instance marks none as default. Enable them under Project settings, Work package types, or ask an admin, then retry.
+
+`list_types` returns an empty list while the instance has no project at all, even for an administrator, because the list is only visible to users with work package permissions in some project. `list_statuses` was observed to behave the same way. Create the first project, then list again.
 
 ## Milestones
 
@@ -55,7 +59,7 @@ Minimal task payload (pass this object as `data` to `create_work_package`):
 
 Add as needed: `"description": {"raw": "markdown text"}`, `"startDate": "2026-10-01"`, `"dueDate": "2026-10-14"`, `"estimatedTime": "PT8H"` (ISO 8601 duration), `"_links": {"parent": {"href": "/api/v3/work_packages/46"}, "priority": {...}, "status": {...}, "responsible": {...}, "targetVersions": [{"href": "/api/v3/versions/3"}]}`. Milestones take `"date"` instead of start and due.
 
-Updates go through `update_work_package` with `id` and `data`; put the `lockVersion` you last read inside `data`. Only send the fields that change. A 409-style conflict means someone changed it since; re-read and retry. These tools write immediately and have no `confirm` argument.
+Updates go through `update_work_package` with `id` and `data`; put the `lockVersion` you last read inside `data`. Only send the fields that change. A 409-style conflict means someone changed it since; re-read and retry. These tools write immediately. There is no preview step.
 
 Check the returned payload for `error` before reporting success. The built-in server can return a permission or validation error in `structuredContent.error` while the MCP envelope's `isError` is false.
 
@@ -69,7 +73,7 @@ These tools exist only in this fork; upstream OpenProject's MCP server cannot do
 |---|---|---|
 | Project | `create_project` | `{"data": {"name": "Wojtek", "identifier": "wojtek"}}`. Always a plain project workspace. |
 | Team | `create_group` | `{"data": {"name": "Wojtek", "_links": {"members": [{"href": "/api/v3/users/32"}]}}}` |
-| Person | `create_user` | `{"data": {"login": "marcin", "email": "...", "firstName": "...", "lastName": "...", "status": "invited"}}`. Invited users set their own password; this dev instance sends no mail, so an admin sets one at `/users/<id>/edit`. |
+| Person | `create_user` | `{"data": {"login": "marcin", "email": "...", "firstName": "...", "lastName": "...", "status": "invited"}}`. Create users as `invited`; they set their own password from the invitation mail. Never send a `password` through this tool: request parameters are logged. If the instance has no outgoing mail, an admin sets the password at `/users/<id>/edit`. |
 | Role ids | `list_roles` | Member is the normal choice for a team. |
 | Add to project | `create_membership` | `{"data": {"_links": {"principal": {"href": "/api/v3/groups/33"}, "project": {"href": "/api/v3/projects/8"}, "roles": [{"href": "/api/v3/roles/4"}]}}}` |
 
@@ -79,4 +83,4 @@ Order: user, then group with that user, then membership of the group in the proj
 
 ## Reporting back
 
-List what was created as a short table of id and subject, name the project URL (`http://localhost:3000/projects/<identifier>/work_packages`), and state plainly anything you could not do, such as a type that was not enabled. Do not claim a hierarchy exists when you created relations.
+List what was created as a short table of id and subject, name the project URL (`<instance URL>/projects/<identifier>/work_packages`, with the instance URL taken from the `current_user` result), and state plainly anything you could not do, such as a type that was not enabled. Do not claim a hierarchy exists when you created relations.

@@ -7,10 +7,9 @@ user permissions. Administrators can still disable the server and individual
 tools under **Administration → Artificial Intelligence (AI) → Model Context
 Protocol (MCP)**.
 
-Connect directly to `http://localhost:3000/mcp` for local development. A deployed
-instance uses its own HTTPS URL ending in `/mcp`. No external MCP adapter is
-required. The additional project, group, user, membership, and role tools in this
-fork use OpenProject's normal contracts and permissions.
+The endpoint is the instance's base URL plus `/mcp`: `http://localhost:3000/mcp` for local development,
+`https://<host>/mcp` for a deployed instance. The additional project, group, user, membership, and role tools
+in this fork use OpenProject's normal contracts and permissions.
 
 ## Authentication
 
@@ -23,48 +22,64 @@ the Base64 encoding of `apikey:<API_TOKEN>`. Store the resulting header privatel
 in local client configuration. Base64 is reversible and must be treated as a
 credential. Do not commit or print it.
 
-## Codex
-
-Use the trusted project's `.codex/config.toml` (ignored by Git):
-
-```toml
-[mcp_servers.openproject-local]
-url = "http://localhost:3000/mcp"
-startup_timeout_sec = 30
-tool_timeout_sec = 120
-
-[mcp_servers.openproject-local.http_headers]
-Authorization = "Basic YOUR_PRIVATE_BASE64_CREDENTIAL"
-```
+Name each registration after its instance, for example `openproject-local` and `openproject-prod`. Distinct
+names keep test data out of production when both are connected.
 
 ## Claude Code
 
-Register this under `mcpServers` in the project's local registration in
-`~/.claude.json`, or in `.mcp.json` (ignored by Git):
+Run this in the project directory. It reads the token from a hidden prompt, so the token stays out of the shell
+history. Replace the name and URL for the instance you are connecting to. Then run `/mcp` in Claude Code to connect.
+
+```sh
+# zsh
+read -s "T?API token: "; echo
+# bash: read -s -p "API token: " T; echo
+claude mcp add --transport http openproject-prod https://<host>/mcp \
+  --header "Authorization: Basic $(printf 'apikey:%s' "$T" | base64)"
+unset T
+```
+
+The registration is stored in `~/.claude.json` for this project directory. The equivalent entry in a project's
+`.mcp.json` (ignored by Git) is:
 
 ```json
 {
-  "openproject-local": {
-    "type": "http",
-    "url": "http://localhost:3000/mcp",
-    "headers": {
-      "Authorization": "Basic YOUR_PRIVATE_BASE64_CREDENTIAL"
+  "mcpServers": {
+    "openproject-prod": {
+      "type": "http",
+      "url": "https://<host>/mcp",
+      "headers": { "Authorization": "Basic YOUR_PRIVATE_BASE64_CREDENTIAL" }
     }
   }
 }
 ```
 
-Replace the previous stdio registration, preserving other client settings. Keep
-token-bearing files readable only by your user (`chmod 600`). Restart or
-reconnect the MCP client after changing configuration.
+## Codex
+
+Use the trusted project's `.codex/config.toml` (ignored by Git):
+
+```toml
+[mcp_servers.openproject-prod]
+url = "https://<host>/mcp"
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.openproject-prod.http_headers]
+Authorization = "Basic YOUR_PRIVATE_BASE64_CREDENTIAL"
+```
+
+Keep token-bearing files readable only by your user (`chmod 600`). Restart or reconnect the MCP client after
+changing configuration.
+
+For ongoing agent work, use a dedicated non-admin account's token. Work package text can carry instructions, and
+an administrator's token would let them reach user management.
 
 ## Verification and workflow
 
 Call `current_user`, `search_projects`, and `list_roles`. Check that the project
 setup tools are listed and enabled. Work-package tools accept API v3 payloads in
 their `data` argument; updates also need the work package `id` and its current
-`lockVersion`. Writes execute immediately; the external adapter's `confirm`
-argument is not part of these tools.
+`lockVersion`. Writes execute immediately. There is no preview step.
 
 Check the returned payload's `error` field even if the MCP envelope has
 `isError: false`; permission and validation failures can use that response shape.
