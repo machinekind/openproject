@@ -25,12 +25,10 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
-# See COPYRIGHT and LICENSE files for more details.
-#++
 
 require "spec_helper"
 
-RSpec.describe McpResources::StatusList do
+RSpec.describe McpTools::ListRoles do
   subject(:mcp_request) do
     header "Authorization", "Bearer #{access_token.plaintext_token}"
     header "Content-Type", "application/json"
@@ -38,66 +36,46 @@ RSpec.describe McpResources::StatusList do
   end
 
   let(:access_token) { create(:oauth_access_token, scopes: "mcp", resource_owner: user) }
-  let(:user) { create(:user) }
-  let(:permissions) { %i[view_work_packages] }
+  let(:user) { create(:admin) }
+  let!(:role) { create(:project_role, name: "Robot wrangler") }
   let(:request_body) do
     {
       jsonrpc: "2.0",
       id: "Test-Request",
-      method: "resources/read",
+      method: "tools/call",
       params: {
-        uri: "http://test.host/api/v3/statuses"
+        name: "list_roles",
+        arguments: {}
       }
     }
   end
-
   let(:parsed_results) { JSON.parse(last_response.body).fetch("result") }
-
-  let!(:status) { create(:status) }
+  let(:result_item) { parsed_results.fetch("structuredContent") }
 
   let(:server_config) { create(:mcp_configuration, identifier: "mcp_server") }
-  let(:resource_config) { create(:mcp_configuration, identifier: described_class.qualified_name) }
+  let(:tool_config) { create(:mcp_configuration, identifier: described_class.qualified_name) }
 
   before do
-    create(:member, user:, roles: [create(:project_role, permissions: permissions)])
     server_config.save!
-    resource_config.save!
+    tool_config.save!
   end
 
   context "when the MCP server is enabled" do
-    it_behaves_like "MCP text resource response"
+    it_behaves_like "MCP text tool"
 
-    it "responds with a properly formatted status list" do
+    it "lists the givable roles" do
       mcp_request
-      text_content = parsed_results.fetch("contents").first
-      statuses = text_content.fetch("text")
-      expect(statuses).to match_json_schema.from_docs("status_collection_model")
-    end
 
-    context "when the resource is disabled via configuration" do
-      let(:resource_config) { create(:mcp_configuration, identifier: described_class.qualified_name, enabled: false) }
-
-      it_behaves_like "MCP empty resource response"
-    end
-
-    context "when lacking permission to see statuses" do
-      let(:permissions) { [] }
-
-      it_behaves_like "MCP text resource response"
-
-      it "responds with an empty list" do
-        mcp_request
-        text_content = parsed_results.fetch("contents").first
-        types_collection = JSON.parse(text_content.fetch("text"))
-        expect(types_collection.dig("_embedded", "elements")).to be_empty
-      end
+      names = result_item.dig("_embedded", "elements").pluck("name")
+      expect(names).to include("Robot wrangler")
+      expect(result_item.dig("_embedded", "elements").first).to include("_type" => "Role")
     end
   end
 
   context "when the MCP server is disabled" do
     let(:server_config) { create(:mcp_configuration, identifier: "mcp_server", enabled: false) }
 
-    it "responds in a 404" do
+    it "responds with a 404" do
       mcp_request
       expect(last_response).to have_http_status(404)
     end

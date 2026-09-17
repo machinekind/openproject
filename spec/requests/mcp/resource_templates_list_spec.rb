@@ -58,7 +58,7 @@ RSpec.describe "MCP resources/templates/list" do
     resource_template_config.save!
   end
 
-  context "when the mcp_server enterprise feature is enabled", with_ee: %i[mcp_server] do
+  context "when the MCP server is enabled" do
     it_behaves_like "MCP result response"
 
     it "includes the status resource template" do
@@ -99,15 +99,6 @@ RSpec.describe "MCP resources/templates/list" do
       it_behaves_like "MCP unauthenticated response"
     end
 
-    context "when the MCP server is disabled via configuration" do
-      let(:server_config) { create(:mcp_configuration, identifier: "mcp_server", enabled: false) }
-
-      it "responds in a 404" do
-        subject
-        expect(last_response).to have_http_status(404)
-      end
-    end
-
     context "when the status resource template is disabled" do
       let(:resource_template_config) do
         create(:mcp_configuration, identifier: McpResources::Status.qualified_name, enabled: false)
@@ -124,7 +115,9 @@ RSpec.describe "MCP resources/templates/list" do
     end
   end
 
-  context "when the mcp_server enterprise feature is disabled" do
+  context "when the MCP server is disabled" do
+    let(:server_config) { create(:mcp_configuration, identifier: "mcp_server", enabled: false) }
+
     it "responds in a 404" do
       subject
       expect(last_response).to have_http_status(404)

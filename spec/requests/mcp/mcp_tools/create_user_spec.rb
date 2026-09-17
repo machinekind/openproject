@@ -25,12 +25,10 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
-# See COPYRIGHT and LICENSE files for more details.
-#++
 
 require "spec_helper"
 
-RSpec.describe McpResources::StatusList do
+RSpec.describe McpTools::CreateUser do
   subject(:mcp_request) do
     header "Authorization", "Bearer #{access_token.plaintext_token}"
     header "Content-Type", "application/json"
@@ -38,58 +36,70 @@ RSpec.describe McpResources::StatusList do
   end
 
   let(:access_token) { create(:oauth_access_token, scopes: "mcp", resource_owner: user) }
-  let(:user) { create(:user) }
-  let(:permissions) { %i[view_work_packages] }
+  let(:user) { create(:admin) }
   let(:request_body) do
     {
       jsonrpc: "2.0",
       id: "Test-Request",
-      method: "resources/read",
+      method: "tools/call",
       params: {
-        uri: "http://test.host/api/v3/statuses"
+        name: "create_user",
+        arguments: call_args
       }
     }
   end
-
+  let(:call_args) do
+    {
+      data: {
+        login: "wojtek",
+        email: "wojtek@example.com",
+        firstName: "Wojtek",
+        lastName: "Bear",
+        status: "invited"
+      }
+    }
+  end
   let(:parsed_results) { JSON.parse(last_response.body).fetch("result") }
-
-  let!(:status) { create(:status) }
+  let(:result_item) { parsed_results.fetch("structuredContent") }
 
   let(:server_config) { create(:mcp_configuration, identifier: "mcp_server") }
-  let(:resource_config) { create(:mcp_configuration, identifier: described_class.qualified_name) }
+  let(:tool_config) { create(:mcp_configuration, identifier: described_class.qualified_name) }
 
   before do
-    create(:member, user:, roles: [create(:project_role, permissions: permissions)])
     server_config.save!
-    resource_config.save!
+    tool_config.save!
   end
 
   context "when the MCP server is enabled" do
-    it_behaves_like "MCP text resource response"
+    it_behaves_like "MCP text tool"
 
-    it "responds with a properly formatted status list" do
+    it "creates a new invited user" do
+      expect { mcp_request }.to change { User.find_by(login: "wojtek") }.from(nil)
+
+      created = User.find_by(login: "wojtek")
+      expect(created.mail).to eq("wojtek@example.com")
+      expect(created.firstname).to eq("Wojtek")
+      expect(created.lastname).to eq("Bear")
+      expect(created).to be_invited
+    end
+
+    it "responds with a properly formatted user" do
       mcp_request
-      text_content = parsed_results.fetch("contents").first
-      statuses = text_content.fetch("text")
-      expect(statuses).to match_json_schema.from_docs("status_collection_model")
+
+      expect(result_item.to_json).to match_json_schema.from_docs("user_model")
     end
 
-    context "when the resource is disabled via configuration" do
-      let(:resource_config) { create(:mcp_configuration, identifier: described_class.qualified_name, enabled: false) }
+    context "when the email is missing" do
+      let(:call_args) { { data: { login: "wojtek", firstName: "Wojtek", lastName: "Bear", status: "invited" } } }
 
-      it_behaves_like "MCP empty resource response"
-    end
-
-    context "when lacking permission to see statuses" do
-      let(:permissions) { [] }
-
-      it_behaves_like "MCP text resource response"
-
-      it "responds with an empty list" do
+      it "responds with an error" do
         mcp_request
-        text_content = parsed_results.fetch("contents").first
-        types_collection = JSON.parse(text_content.fetch("text"))
-        expect(types_collection.dig("_embedded", "elements")).to be_empty
+        expect(result_item.fetch("error")).to include("Email can't be blank")
+      end
+
+      it "does not create a user" do
+        mcp_request
+        expect(User.find_by(login: "wojtek")).to be_nil
       end
     end
   end
@@ -97,7 +107,7 @@ RSpec.describe McpResources::StatusList do
   context "when the MCP server is disabled" do
     let(:server_config) { create(:mcp_configuration, identifier: "mcp_server", enabled: false) }
 
-    it "responds in a 404" do
+    it "responds with a 404" do
       mcp_request
       expect(last_response).to have_http_status(404)
     end

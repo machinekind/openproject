@@ -56,7 +56,7 @@ RSpec.describe "MCP tools/list" do
     tool_config.save!
   end
 
-  context "when the mcp_server enterprise feature is enabled", with_ee: %i[mcp_server] do
+  context "when the MCP server is enabled" do
     it_behaves_like "MCP result response"
 
     it "includes the search_projects tool" do
@@ -95,15 +95,6 @@ RSpec.describe "MCP tools/list" do
       it_behaves_like "MCP unauthenticated response"
     end
 
-    context "when the MCP server is disabled via configuration" do
-      let(:server_config) { create(:mcp_configuration, identifier: "mcp_server", enabled: false) }
-
-      it "responds in a 404" do
-        subject
-        expect(last_response).to have_http_status(404)
-      end
-    end
-
     context "when the search_projects tool is disabled" do
       let(:tool_config) { create(:mcp_configuration, identifier: McpTools::SearchProjects.qualified_name, enabled: false) }
 
@@ -118,7 +109,9 @@ RSpec.describe "MCP tools/list" do
     end
   end
 
-  context "when the mcp_server enterprise feature is disabled" do
+  context "when the MCP server is disabled" do
+    let(:server_config) { create(:mcp_configuration, identifier: "mcp_server", enabled: false) }
+
     it "responds in a 404" do
       subject
       expect(last_response).to have_http_status(404)

@@ -137,6 +137,10 @@ lefthook-local.yml
 AGENTS.local.md
 CLAUDE.local.md
 
+# Local MCP client configuration can contain API tokens
+/.mcp.json
+/.codex/config.toml
+
 /.lefthook-local/
 
 frontend/package-lock.json

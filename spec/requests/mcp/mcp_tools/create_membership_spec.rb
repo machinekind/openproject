@@ -25,12 +25,10 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
-# See COPYRIGHT and LICENSE files for more details.
-#++
 
 require "spec_helper"
 
-RSpec.describe McpResources::StatusList do
+RSpec.describe McpTools::CreateMembership do
   subject(:mcp_request) do
     header "Authorization", "Bearer #{access_token.plaintext_token}"
     header "Content-Type", "application/json"
@@ -38,58 +36,80 @@ RSpec.describe McpResources::StatusList do
   end
 
   let(:access_token) { create(:oauth_access_token, scopes: "mcp", resource_owner: user) }
-  let(:user) { create(:user) }
-  let(:permissions) { %i[view_work_packages] }
+  let(:user) { create(:admin) }
+  let(:project) { create(:project) }
+  let(:group) { create(:group) }
+  let(:role) { create(:project_role) }
   let(:request_body) do
     {
       jsonrpc: "2.0",
       id: "Test-Request",
-      method: "resources/read",
+      method: "tools/call",
       params: {
-        uri: "http://test.host/api/v3/statuses"
+        name: "create_membership",
+        arguments: call_args
       }
     }
   end
-
+  let(:call_args) do
+    {
+      data: {
+        _links: {
+          principal: { href: "/api/v3/groups/#{group.id}" },
+          project: { href: "/api/v3/projects/#{project.id}" },
+          roles: [{ href: "/api/v3/roles/#{role.id}" }]
+        }
+      }
+    }
+  end
   let(:parsed_results) { JSON.parse(last_response.body).fetch("result") }
-
-  let!(:status) { create(:status) }
+  let(:result_item) { parsed_results.fetch("structuredContent") }
 
   let(:server_config) { create(:mcp_configuration, identifier: "mcp_server") }
-  let(:resource_config) { create(:mcp_configuration, identifier: described_class.qualified_name) }
+  let(:tool_config) { create(:mcp_configuration, identifier: described_class.qualified_name) }
 
   before do
-    create(:member, user:, roles: [create(:project_role, permissions: permissions)])
     server_config.save!
-    resource_config.save!
+    tool_config.save!
   end
 
   context "when the MCP server is enabled" do
-    it_behaves_like "MCP text resource response"
+    it_behaves_like "MCP text tool"
 
-    it "responds with a properly formatted status list" do
+    it "adds the principal to the project with the given role" do
+      expect { mcp_request }.to change(Member, :count).from(0).to(1)
+
+      member = Member.first
+      expect(member.principal).to eq(group)
+      expect(member.project).to eq(project)
+      expect(member.roles).to contain_exactly(role)
+    end
+
+    it "responds with a properly formatted membership" do
       mcp_request
-      text_content = parsed_results.fetch("contents").first
-      statuses = text_content.fetch("text")
-      expect(statuses).to match_json_schema.from_docs("status_collection_model")
+
+      expect(result_item).to include("_type" => "Membership", "id" => Member.first.id)
     end
 
-    context "when the resource is disabled via configuration" do
-      let(:resource_config) { create(:mcp_configuration, identifier: described_class.qualified_name, enabled: false) }
+    context "when no role is given" do
+      let(:call_args) do
+        {
+          data: {
+            _links: {
+              principal: { href: "/api/v3/groups/#{group.id}" },
+              project: { href: "/api/v3/projects/#{project.id}" }
+            }
+          }
+        }
+      end
 
-      it_behaves_like "MCP empty resource response"
-    end
-
-    context "when lacking permission to see statuses" do
-      let(:permissions) { [] }
-
-      it_behaves_like "MCP text resource response"
-
-      it "responds with an empty list" do
+      it "responds with an error" do
         mcp_request
-        text_content = parsed_results.fetch("contents").first
-        types_collection = JSON.parse(text_content.fetch("text"))
-        expect(types_collection.dig("_embedded", "elements")).to be_empty
+        expect(result_item.fetch("error")).to include("Roles")
+      end
+
+      it "does not create a membership" do
+        expect { mcp_request }.not_to change(Member, :count)
       end
     end
   end
@@ -97,7 +117,7 @@ RSpec.describe McpResources::StatusList do
   context "when the MCP server is disabled" do
     let(:server_config) { create(:mcp_configuration, identifier: "mcp_server", enabled: false) }
 
-    it "responds in a 404" do
+    it "responds with a 404" do
       mcp_request
       expect(last_response).to have_http_status(404)
     end

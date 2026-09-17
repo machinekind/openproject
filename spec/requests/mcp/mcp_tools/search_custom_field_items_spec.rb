@@ -90,7 +90,7 @@ RSpec.describe McpTools::SearchCustomFieldItems do
     tool_config.save!
   end
 
-  context "when the mcp_server enterprise feature is enabled", with_ee: %i[mcp_server custom_field_hierarchies] do
+  context "when the MCP server is enabled", with_ee: %i[custom_field_hierarchies] do
     it_behaves_like "MCP text tool"
 
     it "finds all items of the custom field" do
@@ -160,7 +160,9 @@ RSpec.describe McpTools::SearchCustomFieldItems do
     end
   end
 
-  context "when the mcp_server enterprise feature is disabled", with_ee: %i[custom_field_hierarchies] do
+  context "when the MCP server is disabled", with_ee: %i[custom_field_hierarchies] do
+    let(:server_config) { create(:mcp_configuration, identifier: "mcp_server", enabled: false) }
+
     it "responds in a 404" do
       mcp_request
       expect(last_response).to have_http_status(404)
