@@ -1,5 +1,6 @@
 #cloud-config
-# First-boot setup for the Droplet: Docker, a swap file as OOM insurance, a firewall, unattended security updates.
+# First-boot setup for the Droplet: Docker with log rotation, key-only SSH, a swap file as OOM
+# insurance, a firewall, unattended security updates with an automatic reboot window.
 package_update: true
 packages:
   - ca-certificates
@@ -7,22 +8,38 @@ packages:
   - rclone
   - ufw
   - unattended-upgrades
+ssh_pwauth: false
 swap:
   filename: /swapfile
   size: 2G
   maxsize: 2G
+write_files:
+  - path: /etc/docker/daemon.json
+    content: |
+      {"log-driver": "json-file", "log-opts": {"max-size": "20m", "max-file": "5"}}
+  - path: /etc/ssh/sshd_config.d/10-key-only.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+  - path: /etc/apt/apt.conf.d/52unattended-upgrades-reboot
+    content: |
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "04:30";
 runcmd:
+  - mkdir -p /srv/openproject
+  - systemctl reload ssh || systemctl restart ssh
   - install -m 0755 -d /etc/apt/keyrings
   - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
   - chmod a+r /etc/apt/keyrings/docker.asc
   - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
   - apt-get update
   - apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  # Port 22 is allowed before the firewall is enabled, so this cannot cut off SSH.
   - ufw default deny incoming
   - ufw allow 22/tcp
   - ufw allow 80/tcp
   - ufw allow 443
   - ufw --force enable
-  - mkdir -p /srv/openproject
   - sysctl -w vm.swappiness=10
   - echo "vm.swappiness=10" > /etc/sysctl.d/60-swappiness.conf

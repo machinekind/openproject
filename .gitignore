@@ -151,3 +151,6 @@ acme.json
 
 # Generated seeders crowdin source file
 **/config/locales/en.seeders.yml
+
+# Production secrets must never be committed, whatever branch is checked out
+/deploy/**/.env

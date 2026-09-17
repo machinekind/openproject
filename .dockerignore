@@ -45,3 +45,12 @@ vendor/bundle
 vendor/hocuspocus
 /public/assets
 /config/frontend_assets.manifest.json
+
+# Local credentials and deployment files must never enter an image built from a working tree
+.codex
+.claude
+.cursor
+**/.mcp.json
+**/.env
+**/.env.*
+/deploy

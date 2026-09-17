@@ -1,6 +1,7 @@
 # Production stack for a single DigitalOcean Droplet with DigitalOcean Managed PostgreSQL.
 # There is deliberately no database container: DATABASE_URL in .env points at the managed cluster.
-name: openproject
+# Not "openproject": that is the project name of the local development stack.
+name: openproject-prod
 
 x-app: &app
   image: ${OPENPROJECT_IMAGE:?set OPENPROJECT_IMAGE in .env}
