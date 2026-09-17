@@ -5,8 +5,12 @@ point-in-time recovery. Caddy provides TLS.
 
 | Piece | Default | About USD a month |
 |---|---|---|
-| Droplet `s-2vcpu-4gb`, Frankfurt, image backups | app, worker, Caddy | 24 + 4.80 |
+| Droplet `s-2vcpu-4gb`, Frankfurt, daily image backups (30%) | app, worker, Caddy | 24 + 7.20 |
 | Managed PostgreSQL 17 `db-s-1vcpu-1gb`, same VPC | 22 connections | 15.15 |
+
+`doctl` enables daily Droplet backups by default. Weekly backups cost 20% instead of 30%; add
+`--backup-policy-plan weekly` to the `droplet create` call in `provision.sh` if you prefer them. Keep daily
+until an off-server backup remote is configured, because attachments live only on the Droplet.
 
 This sizing matches upstream's "small instance" profile (up to 200 users with low concurrent activity), so
 it carries a team of 20 to 30. A 2 GB Droplet is not viable: web and worker need about 2.6 GB, and a deploy
@@ -149,8 +153,8 @@ Droplet holds nothing that cannot be recreated except the attachments volume.
   raise them only together with the database plan.
 - Never run `deploy.sh` or `docker compose up` for this stack on your own machine.
 - An automatic security reboot can happen at 04:30. The stack comes back by itself.
-- Not yet exercised against a live DigitalOcean account: the size slugs and firewall rule syntax, whether
-  the managed admin user may create the three extensions and the ICU collation, outbound SMTP on 2525, and
-  the full image build on a GitHub-hosted runner. If the first `seeder` run fails, `docker compose logs
+- The size slugs, region, image, PostgreSQL version and every `doctl` flag in `provision.sh` were checked
+  against a live account with doctl 1.168. Not yet exercised: the firewall rule syntax on create, whether the
+  managed admin user may create the three extensions and the ICU collation, and outbound SMTP on 2525. If the first `seeder` run fails, `docker compose logs
   seeder` says why. List current slugs with `doctl compute size list` and
   `doctl databases options slugs --engine pg`.
