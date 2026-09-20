@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # OpenProject Boards module
 #
 # Copyright (C) the OpenProject GmbH
@@ -84,6 +86,11 @@ module OpenProject::Boards
 
     config.to_prepare do
       OpenProject::Boards::GridRegistration.register!
+
+      McpTools.register McpTools::CreateBoard,
+                        McpTools::CreateBoardList,
+                        McpTools::SearchBoards,
+                        McpTools::UpdateBoard
     end
   end
 end
