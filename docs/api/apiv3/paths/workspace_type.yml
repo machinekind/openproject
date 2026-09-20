@@ -1,0 +1,80 @@
+# /api/v3/workspaces/{id}/types/{type_id}
+---
+delete:
+  parameters:
+    - description: ID of the workspace the type will be deactivated in
+      example: 1
+      in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+    - description: ID of the type to deactivate
+      example: 5
+      in: path
+      name: type_id
+      required: true
+      schema:
+        type: integer
+  responses:
+    '204':
+      description: No Content
+      headers: {}
+    '403':
+      content:
+        application/hal+json:
+          schema:
+            $ref: "../components/schemas/error_response.yml"
+          examples:
+            response:
+              value:
+                _type: Error
+                errorIdentifier: urn:openproject-org:api:v3:errors:MissingPermission
+                message: You are not allowed to manage the types of this workspace.
+      description: |-
+        Returned if the client does not have sufficient permissions.
+
+        **Required permission:** manage types (on given workspace)
+      headers: {}
+    '404':
+      content:
+        application/hal+json:
+          schema:
+            $ref: "../components/schemas/error_response.yml"
+          examples:
+            response:
+              value:
+                _type: Error
+                errorIdentifier: urn:openproject-org:api:v3:errors:NotFound
+                message: The specified workspace does not exist.
+      description: |-
+        Returned if the workspace does not exist, the client does not have sufficient permissions
+        to see it, or the specified type is not activated in the workspace.
+      headers: {}
+    '422':
+      content:
+        application/hal+json:
+          schema:
+            $ref: "../components/schemas/error_response.yml"
+          examples:
+            response:
+              value:
+                _type: Error
+                errorIdentifier: urn:openproject-org:api:v3:errors:PropertyConstraintViolation
+                message: 'Types still in use by work packages: Epic'
+      description: |-
+        Returned if work packages of the specified type still exist in the workspace.
+      headers: {}
+    '406':
+      $ref: "../components/responses/missing_content_type.yml"
+    '415':
+      $ref: "../components/responses/unsupported_media_type.yml"
+  tags:
+    - Types
+    - Workspaces
+  description: |-
+    Deactivates the specified type in the given workspace.
+
+    A type that is still used by work packages of the workspace cannot be deactivated.
+  operationId: Deactivate_type_in_a_workspace
+  summary: Deactivate type in a workspace

@@ -584,6 +584,10 @@ module API
             "#{workspace(project_id)}/types"
           end
 
+          def self.type_by_workspace(project_id, type_id)
+            "#{types_by_workspace(project_id)}/#{type_id}"
+          end
+
           resources :user
 
           def self.user_lock(id)

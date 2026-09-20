@@ -78,3 +78,110 @@ get:
   description: This endpoint lists the types that are *available* in a given workspace.
   operationId: List_types_available_in_a_workspace
   summary: List types available in a workspace
+post:
+  parameters:
+    - description: ID of the workspace the type will be activated in
+      example: 1
+      in: path
+      name: id
+      required: true
+      schema:
+        type: integer
+  requestBody:
+    content:
+      application/json:
+        schema:
+          example:
+            _links:
+              type:
+                href: "/api/v3/types/5"
+          properties:
+            _links:
+              properties:
+                type:
+                  properties:
+                    href:
+                      type: string
+                  type: object
+              type: object
+          type: object
+  responses:
+    '201':
+      content:
+        application/hal+json:
+          schema:
+            "$ref": "../components/schemas/type_model.yml"
+      description: Created
+      headers: {}
+    '200':
+      content:
+        application/hal+json:
+          schema:
+            "$ref": "../components/schemas/type_model.yml"
+      description: Returned if the type was already activated in the workspace.
+      headers: {}
+    '400':
+      $ref: "../components/responses/invalid_request_body.yml"
+    '403':
+      content:
+        application/hal+json:
+          schema:
+            $ref: "../components/schemas/error_response.yml"
+          examples:
+            response:
+              value:
+                _type: Error
+                errorIdentifier: urn:openproject-org:api:v3:errors:MissingPermission
+                message: You are not allowed to manage the types of this workspace.
+      description: |-
+        Returned if the client does not have sufficient permissions.
+
+        **Required permission:** manage types (on given workspace)
+      headers: {}
+    '404':
+      content:
+        application/hal+json:
+          schema:
+            $ref: "../components/schemas/error_response.yml"
+          examples:
+            response:
+              value:
+                _type: Error
+                errorIdentifier: urn:openproject-org:api:v3:errors:NotFound
+                message: The specified workspace does not exist.
+      description: |-
+        Returned if the workspace does not exist, the client does not have sufficient permissions
+        to see it, or the specified type does not exist.
+      headers: {}
+    '422':
+      content:
+        application/hal+json:
+          schema:
+            $ref: "../components/schemas/error_response.yml"
+          examples:
+            response:
+              value:
+                _type: Error
+                errorIdentifier: urn:openproject-org:api:v3:errors:PropertyConstraintViolation
+                message: 'Types Can only enable a single variant of a Type on the project'
+      description: |-
+        Returned if the workspace already uses a different variant of the specified type.
+      headers: {}
+    '406':
+      $ref: "../components/responses/missing_content_type.yml"
+    '415':
+      $ref: "../components/responses/unsupported_media_type.yml"
+  tags:
+    - Types
+    - Workspaces
+  description: |-
+    Activates the specified type in the given workspace, so work packages of that type can be
+    created in it.
+
+    The request is expected to contain a single JSON object, that contains a link object under
+    the `type` key of its `_links`.
+
+    The response is the activated type. In case the type was already activated in the workspace
+    an `HTTP 200` is returned, an `HTTP 201` if it was newly activated.
+  operationId: Activate_type_in_a_workspace
+  summary: Activate type in a workspace

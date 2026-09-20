@@ -31,6 +31,23 @@ module API
     module Types
       class TypesByWorkspaceAPI < ::API::OpenProjectAPI
         resources :types do
+          helpers do
+            def requested_type
+              fail ::API::Errors::InvalidRequestBody.new(I18n.t("api_v3.errors.missing_request_body")) unless request_body
+
+              representer = EnabledTypeRepresenter.create(::API::ParserStruct.new, current_user:)
+              representer.from_hash(request_body)
+
+              ::Type.find_by(id: representer.represented.type_id.to_i)
+            end
+
+            def apply_service(service_class, variant)
+              result = service_class.new(user: current_user, model: @project).call(variant:)
+
+              raise ::API::Errors::ErrorBase.create_and_merge_errors(result.errors) if result.failure?
+            end
+          end
+
           after_validation do
             authorize_in_project %i[view_work_packages manage_types], project: @project
           end
@@ -39,6 +56,33 @@ module API
             TypeCollectionRepresenter.new(@project.enabled_types,
                                           self_link: api_v3_paths.types_by_workspace(@project.id),
                                           current_user:)
+          end
+
+          post do
+            authorize_in_project :manage_types, project: @project
+
+            type = requested_type
+            variant = type&.default_variant
+            raise ::API::Errors::NotFound if variant.nil?
+
+            already_enabled = @project.project_types.exists?(type_id: type.id)
+            apply_service(::Projects::Types::AddService, variant)
+            status(200) if already_enabled
+
+            TypeRepresenter.create(type, current_user:)
+          end
+
+          route_param :type_id, type: Integer, desc: "Type ID" do
+            delete do
+              authorize_in_project :manage_types, project: @project
+
+              type = ::Type.find_by(id: params[:type_id])
+              raise ::API::Errors::NotFound if type.nil? || !@project.project_types.exists?(type_id: type.id)
+
+              apply_service(::Projects::Types::RemoveService, @project.type_variant(type))
+
+              status 204
+            end
           end
         end
       end

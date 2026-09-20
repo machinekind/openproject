@@ -54,6 +54,7 @@ Rails.application.config.to_prepare do
                     McpTools::CreateWorkPackageRelation,
                     McpTools::CurrentUser,
                     McpTools::DeleteWorkPackageRelation,
+                    McpTools::ListProjectTypes,
                     McpTools::ListRoles,
                     McpTools::ListStatuses,
                     McpTools::ListTypes,
@@ -67,6 +68,7 @@ Rails.application.config.to_prepare do
                     McpTools::SearchUsers,
                     McpTools::SearchVersions,
                     McpTools::SearchWorkPackages,
+                    McpTools::UpdateProjectTypes,
                     McpTools::UpdateWorkPackage,
                     McpTools::UpdateWorkPackageRelation
 
