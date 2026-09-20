@@ -87,17 +87,28 @@ grep -v -E '^(SECRET_KEY_BASE|DATABASE_URL|OPENPROJECT_SEED__ADMIN__USER__PASSWO
   printf 'OPENPROJECT_SEED__ADMIN__USER__PASSWORD=%s\n' "$ADMIN_PW"
 } >> "$ENV_OUT"
 
+STATE_OUT="$(dirname "$ENV_OUT")/state"
+{
+  printf 'NAME=%s\n' "$NAME"
+  printf 'DROPLET_ID=%s\n' "$DROPLET_ID"
+  printf 'DROPLET_IP=%s\n' "$DROPLET_IP"
+  printf 'DB_ID=%s\n' "$DB_ID"
+} > "$STATE_OUT"
+
 cat <<MSG
 
 Done. Droplet ${DROPLET_ID} at ${DROPLET_IP}, database ${DB_ID}.
+These facts are saved in ${STATE_OUT}, so nothing depends on this printout.
 
-Next:
-  1. Point a DNS A record for your host name at ${DROPLET_IP}.
-  2. Edit ${ENV_OUT}: set OPENPROJECT_HOST__NAME, OPENPROJECT_IMAGE and the SMTP block.
-     The initial admin password is in there too.
-  3. Wait for first-boot setup, then copy the stack and start it:
-       ssh root@${DROPLET_IP} 'cloud-init status --wait'
-       scp ${HERE}/{docker-compose.yml,Caddyfile,bootstrap-db.sh,deploy.sh,backup.sh} ${ENV_OUT} root@${DROPLET_IP}:/srv/openproject/
-       ssh root@${DROPLET_IP} 'cd /srv/openproject && chmod 600 .env && ./bootstrap-db.sh && ./deploy.sh'
-  4. Save SECRET_KEY_BASE from ${ENV_OUT} in your password manager.
+Next, from this directory (an agent can run all of these):
+  make configure HOST=<host name> ADMIN_MAIL=<your address>     then create the DNS A record it names
+  make image TAG=<tag>                                          unless an image is already pinned
+  make dns-wait
+  make up
+
+Then, in a terminal yourself:
+  make admin-password        log in as admin once and set a new password
+  make create-admin LOGIN=<not guessable> FIRST=.. LAST=.. MAIL=..
+And back to the agent:
+  make harden backup-install roles
 MSG
