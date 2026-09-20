@@ -1,6 +1,6 @@
 ---
 name: openproject-work-packages
-description: Create and structure OpenProject work packages (tasks, milestones, epics, features, bugs, user stories, summary tasks) through a connected OpenProject MCP server, local or deployed, including parents, milestone relations, assignees, dates, versions and the project, group, user and membership tools that a new project needs first. Use this whenever the user asks to add tasks, tickets, issues, milestones, epics or a plan to OpenProject, to put work under a milestone or parent, to set up a project or team in OpenProject, or mentions Wojtek or any project tracked in this instance, even if they do not say "work package" or "MCP".
+description: Create and structure OpenProject work packages (tasks, milestones, epics, features, bugs, user stories, summary tasks) through a connected OpenProject MCP server, local or deployed, including parents, milestone relations, assignees, dates, versions and the project, group, user, membership, type, module and board tools that a new project needs first. Use this whenever the user asks to add tasks, tickets, issues, milestones, epics or a plan to OpenProject, to put work under a milestone or parent, to enable a work package type or a module, to create a board or set its filters and lists, to set up a project or team in OpenProject, or mentions Wojtek or any project tracked in this instance, even if they do not say "work package" or "MCP".
 ---
 
 # OpenProject work packages via MCP
@@ -14,7 +14,7 @@ The tools come from an OpenProject instance's built-in MCP server and are named 
 ## Workflow
 
 1. **Resolve the project.** Call `search_projects` with the name and keep the numeric `id`. If nothing matches, create it with `create_project` (see "Setting up a project" below).
-2. **Resolve the type.** Call `list_types` once and map names to ids. Never guess ids; they differ between instances.
+2. **Resolve the type.** Call `list_types` once and map names to ids. Never guess ids; they differ between instances. `list_project_types` shows which of them the project accepts.
 3. **Resolve people.** Call `search_users` for the assignee. An assignee must already be a member of the project, either directly or through a group. If they are not, add them with `create_membership` first, otherwise the create fails with "Assignee is invalid".
 4. **Create the items** with `create_work_package`. Create parents before children so you have the parent id.
 5. **Link milestones with relations, not parents.** See "Milestones".
@@ -32,7 +32,14 @@ The tools come from an OpenProject instance's built-in MCP server and are named 
 | User story | span | yes | Agile requirement. |
 | Bug | span | yes | A defect. |
 
-A project only accepts the types enabled in its settings. If a create fails with "Type is not set to one of the allowed values", the type is not enabled for that project. A project created through the API starts with **no types** when the instance marks none as default. Enable them under Project settings, Work package types, or ask an admin, then retry.
+A project only accepts the types enabled in its settings. If a create fails with "Type is not set to one of the allowed values", the type is not enabled for that project. A project created through the API starts with **no types** when the instance marks none as default. Call `list_project_types` to see what is enabled and `update_project_types` to change it, then retry:
+
+```
+list_project_types(project_id: 8)
+update_project_types(project_id: 8, add: [5])
+```
+
+Type ids come from `list_types`. `update_project_types` also takes `remove`; a type still used by work packages in the project cannot be removed. Both tools need the numeric project id, not the identifier. Changing types needs the "Select types" permission in the project.
 
 `list_types` returns an empty list while the instance has no project at all, even for an administrator, because the list is only visible to users with work package permissions in some project. `list_statuses` was observed to behave the same way. Create the first project, then list again.
 
@@ -76,6 +83,8 @@ These tools exist only in this fork; upstream OpenProject's MCP server cannot do
 | Person | `create_user` | `{"data": {"login": "marcin", "email": "...", "firstName": "...", "lastName": "...", "status": "invited"}}`. Create users as `invited`; they set their own password from the invitation mail. Never send a `password` through this tool: request parameters are logged. If the instance has no outgoing mail, an admin sets the password at `/users/<id>/edit`. |
 | Role ids | `list_roles` | Member is the normal choice for a team. |
 | Add to project | `create_membership` | `{"data": {"_links": {"principal": {"href": "/api/v3/groups/33"}, "project": {"href": "/api/v3/projects/8"}, "roles": [{"href": "/api/v3/roles/4"}]}}}` |
+| Which types are enabled | `list_project_types` | `{"project_id": 8}`. Numeric id only. |
+| Enable a type | `update_project_types` | `{"project_id": 8, "add": [5], "remove": [3]}`. Ids from `list_types`. A type still used by work packages cannot be removed. |
 | Which modules are on | `list_project_modules` | `{"project_id": "wojtek"}`. Returns every module with its `name`, `enabled`, `dependencies` and enterprise state. |
 | Turn a module on or off | `update_project_modules` | `{"project_id": "wojtek", "enable": ["board_view"]}`. A new project has no `board_view`, so enable it before creating a board. Dependencies are never enabled implicitly — pass them in the same call. |
 
@@ -83,6 +92,25 @@ Order: user, then group with that user, then membership of the group in the proj
 
 "Me" in this instance is whoever the API token belongs to; call `current_user` if unsure. Do not assume the user has an account with their own name.
 
+## Boards
+
+Board tools come from the Boards module, so a project needs `board_view` enabled before any of them works. Check with `list_project_modules` and enable with `update_project_modules`. Managing boards also needs the "Manage boards" permission.
+
+| Need | Tool | Key payload |
+|---|---|---|
+| Find boards | `search_boards` | `{"project_id": 8}`, or `{"name": "delivery"}` for a partial name. Each result carries the board's saved filters in `options` and its lists in `widgets`. |
+| Create a board | `create_board` | `{"project_id": 8, "name": "Delivery", "type": "subtasks"}` |
+| Add a list (column) | `create_board_list` | `{"board_id": 12, "value": 50}` |
+| Rename or set filters | `update_board` | `{"id": 12, "filters": [{"type": {"operator": "=", "values": ["5"]}}]}` |
+
+`create_board` takes one `type`: `basic` (a free board with a single unnamed list), `status` (starts with a list for the default status), `version` (one list per open version), and `assignee`, `subproject`, `subtasks`, which start with no list at all. `subtasks` is the parent-child board.
+
+`create_board_list`'s `value` is the id of what the list is built on: a status, a user or group, a version, a subproject, or the parent work package on a parent-child board. Pass `null` on an assignee board for the unassigned list. `value` is ignored on a basic board. `name` is optional and defaults to the value's own name. Call the tool once per column.
+
+`update_board`'s `filters` use the APIv3 filter form, with values as strings, and apply to every list of the board. The array replaces the filters the board has; `[]` removes them all. Pass `name`, `filters` or both. A board managed by the backlogs module rejects filter changes.
+
+Order for a new initiative: enable `board_view`, `create_board`, one `create_board_list` per column, then `update_board` for the filters.
+
 ## Reporting back
 
-List what was created as a short table of id and subject, name the project URL (`<instance URL>/projects/<identifier>/work_packages`, with the instance URL taken from the `current_user` result), and state plainly anything you could not do, such as a type that was not enabled. Do not claim a hierarchy exists when you created relations.
+List what was created as a short table of id and subject, name the project URL (`<instance URL>/projects/<identifier>/work_packages`, with the instance URL taken from the `current_user` result), and state plainly anything you could not do, such as a module you lacked the permission to enable. Do not claim a hierarchy exists when you created relations.
