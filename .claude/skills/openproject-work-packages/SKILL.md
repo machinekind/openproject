@@ -76,6 +76,8 @@ These tools exist only in this fork; upstream OpenProject's MCP server cannot do
 | Person | `create_user` | `{"data": {"login": "marcin", "email": "...", "firstName": "...", "lastName": "...", "status": "invited"}}`. Create users as `invited`; they set their own password from the invitation mail. Never send a `password` through this tool: request parameters are logged. If the instance has no outgoing mail, an admin sets the password at `/users/<id>/edit`. |
 | Role ids | `list_roles` | Member is the normal choice for a team. |
 | Add to project | `create_membership` | `{"data": {"_links": {"principal": {"href": "/api/v3/groups/33"}, "project": {"href": "/api/v3/projects/8"}, "roles": [{"href": "/api/v3/roles/4"}]}}}` |
+| Which modules are on | `list_project_modules` | `{"project_id": "wojtek"}`. Returns every module with its `name`, `enabled`, `dependencies` and enterprise state. |
+| Turn a module on or off | `update_project_modules` | `{"project_id": "wojtek", "enable": ["board_view"]}`. A new project has no `board_view`, so enable it before creating a board. Dependencies are never enabled implicitly — pass them in the same call. |
 
 Order: user, then group with that user, then membership of the group in the project, then work packages. Adding a group to a project gives every member of the group the role, including people added later.
 
