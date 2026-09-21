@@ -40,8 +40,19 @@ module McpTools
       "subtasks" => :parent
     }.freeze
 
+    # The filter names getActionFiltersFromWidget (board-list-container.component.ts) reads to know which
+    # values a board already uses. The first one is written, all of them are recognised.
+    WIDGET_FILTER_NAMES = {
+      "status" => %w[status_id status],
+      "assignee" => %w[assignee assignee_id assigned_to_id],
+      "version" => %w[version_id version],
+      "subproject" => %w[onlySubproject onlySubproject_id only_subproject_id],
+      "subtasks" => %w[parent parent_id]
+    }.freeze
+
     FREE_LIST_FILTER = { manual_sort: { operator: "ow", values: [] } }.freeze
     FREE_LIST_NAME = "Unnamed list"
+    DUPLICATE_LIST_ERROR = "The board already has a list for this value."
 
     default_title "Create board list"
     default_description "Add a list (column) to a work package board."
@@ -59,7 +70,8 @@ module McpTools
           description: "ID of the value the list is built on: a status on a status board, a user or group on an " \
                        "assignee board, a version on a version board, a subproject on a subproject board and the " \
                        "parent work package on a parent-child board. On an assignee board, pass null for the list " \
-                       "of unassigned work packages. Ignored on a basic board, which has no list attribute."
+                       "of unassigned work packages. A board takes one list per value, so a value that already " \
+                       "has a list is rejected. Ignored on a basic board, which has no list attribute."
         },
         name: {
           type: "string",
@@ -152,22 +164,55 @@ module McpTools
     def add_list(board, filter, name)
       result = nil
 
-      ActiveRecord::Base.transaction do
-        query_result = Queries::CreateService.new(user: current_user).call(create_query_params(board, filter, name))
-
-        if query_result.failure?
-          result = query_result
-        else
-          widgets = widgets_with_list(board, query_result.result, filter)
-          result = Grids::UpdateService
-                     .new(user: current_user, model: board)
-                     .call(widgets:, column_count: widgets.size)
-        end
+      OpenProject::Mutex.with_advisory_lock_transaction(board) do
+        board.reload
+        result = create_list(board, filter, name)
 
         raise ActiveRecord::Rollback if result.failure?
       end
 
       result
+    end
+
+    def create_list(board, filter, name)
+      return ServiceResult.failure(message: DUPLICATE_LIST_ERROR) if list_exists?(board, filter)
+
+      query_result = Queries::CreateService.new(user: current_user).call(create_query_params(board, filter, name))
+      return query_result if query_result.failure?
+
+      widgets = widgets_with_list(board, query_result.result, widget_filter(board, filter))
+
+      Grids::UpdateService
+        .new(user: current_user, model: board)
+        .call(widgets:, column_count: widgets.size)
+    end
+
+    def list_exists?(board, filter)
+      names = WIDGET_FILTER_NAMES[board.board_type_attribute]
+      return false if board.board_type == :free || names.nil?
+
+      value = list_value(filter.values.first)
+
+      board.widgets.any? do |widget|
+        existing = action_condition(widget, names)
+        existing && list_value(existing) == value
+      end
+    end
+
+    def action_condition(widget, names)
+      Array(widget.options["filters"])
+        .filter_map { it.with_indifferent_access.values_at(*names).compact.first }
+        .first
+    end
+
+    def list_value(condition)
+      Array(condition.with_indifferent_access[:values]).first&.to_s
+    end
+
+    def widget_filter(board, filter)
+      return filter if board.board_type == :free
+
+      { WIDGET_FILTER_NAMES.fetch(board.board_type_attribute).first.to_sym => filter.values.first }
     end
 
     def create_query_params(board, filter, name)

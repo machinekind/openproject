@@ -74,12 +74,12 @@ RSpec.describe McpTools::CreateBoardList do
 
   shared_examples_for "a created list" do
     it "appends a list backed by a new public query" do
-      existing_ids = board.widgets.map(&:id)
+      existing = board.widgets.sort_by { [it.start_column, it.id] }.map { [it.id, it.options] }
 
       expect { mcp_request }.to change { board.reload.widgets.count }.by(1)
 
       widgets = board.widgets.sort_by(&:start_column)
-      expect(existing_ids - widgets.map(&:id)).to be_empty
+      expect(widgets.first(existing.size).map { [it.id, it.options] }).to eq(existing)
       expect(widgets.map(&:start_column)).to eq((1..widgets.size).to_a)
       expect(widgets.map(&:end_column)).to eq((2..(widgets.size + 1)).to_a)
       expect(board.column_count).to eq(widgets.size)
@@ -109,6 +109,12 @@ RSpec.describe McpTools::CreateBoardList do
     end
   end
 
+  def new_list
+    widget = board.reload.widgets.max_by(&:start_column)
+
+    [widget, Query.find(widget.options["queryId"])]
+  end
+
   context "when the MCP server is enabled" do
     it_behaves_like "MCP text tool"
 
@@ -130,6 +136,34 @@ RSpec.describe McpTools::CreateBoardList do
         let(:expected_name) { "Ideas" }
 
         it_behaves_like "a created list"
+      end
+
+      context "when another request added a list after the board was loaded" do
+        let(:board) { create(:board_grid_with_query, project:) }
+        let(:stale_board) { Boards::Grid.find(board.id).tap { it.widgets.load } }
+
+        def stub_loaded_board(loaded_board)
+          allow(described_class).to receive(:new).and_wrap_original do |original, **args|
+            original.call(**args).tap do |tool|
+              allow(tool).to receive(:authorized_board).and_return(Dry::Monads::Success(loaded_board))
+            end
+          end
+        end
+
+        it "places the list after the one added in the meantime and leaves a valid board" do
+          stale_board
+          header "Authorization", "Bearer #{access_token.plaintext_token}"
+          header "Content-Type", "application/json"
+          post "/mcp", request_body.to_json
+
+          stub_loaded_board(stale_board)
+          post "/mcp", request_body.to_json
+
+          widgets = board.reload.widgets.sort_by(&:start_column)
+          expect(widgets.map { [it.start_column, it.end_column] }).to eq([[1, 2], [2, 3], [3, 4]])
+          expect(board.column_count).to eq(3)
+          expect(Grids::UpdateService.new(user:, model: board).call(name: "Renamed")).to be_success
+        end
       end
     end
 
@@ -159,6 +193,13 @@ RSpec.describe McpTools::CreateBoardList do
 
       it_behaves_like "a created list"
 
+      context "when the board already has a list for the status" do
+        let(:call_args) { { board_id: board.id, value: default_status.id } }
+        let(:expected_error) { "The board already has a list for this value." }
+
+        it_behaves_like "a rejected list"
+      end
+
       context "when the status does not exist" do
         let(:call_args) { { board_id: board.id, value: 0 } }
         let(:expected_error) { "The given status could not be found." }
@@ -174,17 +215,85 @@ RSpec.describe McpTools::CreateBoardList do
                       member_with_permissions: { project => %i[view_work_packages work_package_assigned] })
       end
       let(:call_args) { { board_id: board.id, value: assignee.id } }
-      let(:expected_filter) { { assigned_to_id: { operator: "=", values: [assignee.id.to_s] } } }
+      let(:expected_filter) { { assignee: { operator: "=", values: [assignee.id.to_s] } } }
       let(:expected_name) { assignee.name }
+
+      def add_ui_made_list(grid, condition)
+        grid.widgets.create!(identifier: "work_package_query",
+                             start_row: 1,
+                             end_row: 2,
+                             start_column: 1,
+                             end_column: 2,
+                             options: { "queryId" => create(:public_query, project:).id,
+                                        "filters" => [{ "assignee" => condition }] })
+      end
 
       it_behaves_like "a created list"
 
+      it "stores the filter name the frontend reads in the widget while the query filters by assigned_to_id" do
+        mcp_request
+
+        widget, query = new_list
+
+        expect(widget.options["filters"].sole.keys).to eq([:assignee])
+        expect(query.filters.map(&:to_hash)).to eq([{ assigned_to_id: { operator: "=", values: [assignee.id.to_s] } }])
+      end
+
       context "when passing an explicit null value" do
         let(:call_args) { { board_id: board.id, value: nil } }
-        let(:expected_filter) { { assigned_to_id: { operator: "!*", values: [] } } }
+        let(:expected_filter) { { assignee: { operator: "!*", values: [] } } }
         let(:expected_name) { I18n.t(:label_none) }
 
         it_behaves_like "a created list"
+
+        it "filters the query for work packages without an assignee" do
+          mcp_request
+
+          expect(new_list.last.filters.map(&:to_hash)).to eq([{ assigned_to_id: { operator: "!*", values: [] } }])
+        end
+      end
+
+      context "when the board already has a list the UI made for the assignee" do
+        let(:board) do
+          action_board(Boards::AssigneeBoardCreateService, "assignee").tap do |grid|
+            add_ui_made_list(grid, { "operator" => "=", "values" => [assignee.id.to_s] })
+          end
+        end
+        let(:expected_error) { "The board already has a list for this value." }
+
+        it_behaves_like "a rejected list"
+
+        context "when asking for the unassigned list" do
+          let(:call_args) { { board_id: board.id, value: nil } }
+          let(:expected_filter) { { assignee: { operator: "!*", values: [] } } }
+          let(:expected_name) { I18n.t(:label_none) }
+
+          it_behaves_like "a created list"
+        end
+      end
+
+      context "when the board already has the unassigned list" do
+        let(:board) do
+          action_board(Boards::AssigneeBoardCreateService, "assignee").tap do |grid|
+            add_ui_made_list(grid, { "operator" => "!*", "values" => [] })
+          end
+        end
+        let(:call_args) { { board_id: board.id, value: nil } }
+        let(:expected_error) { "The board already has a list for this value." }
+
+        it_behaves_like "a rejected list"
+      end
+
+      context "when the board already has a list this tool made for the assignee" do
+        let(:expected_error) { "The board already has a list for this value." }
+
+        before do
+          header "Authorization", "Bearer #{access_token.plaintext_token}"
+          header "Content-Type", "application/json"
+          post "/mcp", request_body.to_json
+        end
+
+        it_behaves_like "a rejected list"
       end
 
       context "when passing no value at all" do
@@ -238,6 +347,13 @@ RSpec.describe McpTools::CreateBoardList do
         end
       end
 
+      context "when the board already has a list for the version" do
+        let(:call_args) { { board_id: board.id, value: existing_version.id } }
+        let(:expected_error) { "The board already has a list for this value." }
+
+        it_behaves_like "a rejected list"
+      end
+
       context "when the version belongs to another project" do
         let(:call_args) { { board_id: board.id, value: create(:version).id } }
         let(:expected_error) { "The given version is not available in this project." }
@@ -250,7 +366,7 @@ RSpec.describe McpTools::CreateBoardList do
       let(:subproject) { create(:project, parent: project, name: "Subproject") }
       let(:board) { action_board(Boards::SubprojectBoardCreateService, "subproject") }
       let(:call_args) { { board_id: board.id, value: subproject.id } }
-      let(:expected_filter) { { only_subproject_id: { operator: "=", values: [subproject.id.to_s] } } }
+      let(:expected_filter) { { onlySubproject: { operator: "=", values: [subproject.id.to_s] } } }
       let(:expected_name) { "Subproject" }
 
       before do
@@ -262,8 +378,46 @@ RSpec.describe McpTools::CreateBoardList do
 
       it_behaves_like "a created list"
 
-      context "when the project is not a descendant" do
-        let(:call_args) { { board_id: board.id, value: create(:project).id } }
+      it "stores the filter name the frontend reads in the widget while the query filters by only_subproject_id" do
+        mcp_request
+
+        widget, query = new_list
+
+        expect(widget.options["filters"].sole.keys).to eq([:onlySubproject])
+        expect(query.filters.map(&:to_hash))
+          .to eq([{ only_subproject_id: { operator: "=", values: [subproject.id.to_s] } }])
+      end
+
+      context "when the board already has a list this tool made for the subproject" do
+        let(:expected_error) { "The board already has a list for this value." }
+
+        before do
+          header "Authorization", "Bearer #{access_token.plaintext_token}"
+          header "Content-Type", "application/json"
+          post "/mcp", request_body.to_json
+        end
+
+        it_behaves_like "a rejected list"
+      end
+
+      context "when the project is visible but not a descendant" do
+        let(:other_project) { create(:project) }
+        let(:call_args) { { board_id: board.id, value: other_project.id } }
+        let(:expected_error) { "The given subproject could not be found." }
+
+        before do
+          create(:member,
+                 principal: user,
+                 project: other_project,
+                 roles: [create(:project_role, permissions: %i[view_work_packages])])
+        end
+
+        it_behaves_like "a rejected list"
+      end
+
+      context "when the subproject is not visible to the user" do
+        let(:hidden_subproject) { create(:project, parent: project) }
+        let(:call_args) { { board_id: board.id, value: hidden_subproject.id } }
         let(:expected_error) { "The given subproject could not be found." }
 
         it_behaves_like "a rejected list"
@@ -279,7 +433,29 @@ RSpec.describe McpTools::CreateBoardList do
 
       it_behaves_like "a created list"
 
-      context "when the work package is not visible" do
+      context "when the work package is visible but belongs to another project" do
+        let(:other_project) { create(:project) }
+        let(:call_args) { { board_id: board.id, value: create(:work_package, project: other_project).id } }
+        let(:expected_error) { "The given work package could not be found in this project." }
+
+        before do
+          create(:member,
+                 principal: user,
+                 project: other_project,
+                 roles: [create(:project_role, permissions: %i[view_work_packages])])
+        end
+
+        it_behaves_like "a rejected list"
+      end
+
+      context "when the work package is in the board project but not visible to the user" do
+        let(:permissions) { %i[show_board_views manage_board_views manage_public_queries save_queries] }
+        let(:expected_error) { "The given work package could not be found in this project." }
+
+        it_behaves_like "a rejected list"
+      end
+
+      context "when the work package belongs to a project the user cannot see" do
         let(:call_args) { { board_id: board.id, value: create(:work_package).id } }
         let(:expected_error) { "The given work package could not be found in this project." }
 

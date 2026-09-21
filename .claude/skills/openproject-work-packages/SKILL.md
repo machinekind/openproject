@@ -105,7 +105,7 @@ Board tools come from the Boards module, so a project needs `board_view` enabled
 
 `create_board` takes one `type`: `basic` (a free board with a single unnamed list), `status` (starts with a list for the default status), `version` (one list per open version), and `assignee`, `subproject`, `subtasks`, which start with no list at all. `subtasks` is the parent-child board.
 
-`create_board_list`'s `value` is the id of what the list is built on: a status, a user or group, a version, a subproject, or the parent work package on a parent-child board. Pass `null` on an assignee board for the unassigned list. `value` is ignored on a basic board. `name` is optional and defaults to the value's own name. Call the tool once per column.
+`create_board_list`'s `value` is the id of what the list is built on: a status, a user or group, a version, a subproject, or the parent work package on a parent-child board. Pass `null` on an assignee board for the unassigned list. A board takes one list per value: a value that already has a list, such as the default status of a new status board or an open version of a new version board, is rejected with "The board already has a list for this value." `value` is ignored on a basic board. `name` is optional and defaults to the value's own name. Call the tool once per column.
 
 `update_board`'s `filters` use the APIv3 filter form, with values as strings, and apply to every list of the board. The array replaces the filters the board has; `[]` removes them all. Pass `name`, `filters` or both. A board managed by the backlogs module rejects filter changes.
 
