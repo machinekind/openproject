@@ -198,6 +198,20 @@ RSpec.describe McpTools::UpdateProjectTypes do
           expect { mcp_request }.not_to change(ProjectType, :count)
         end
       end
+
+      context "when a removal fails after types were added" do
+        let(:call_args) { { project_id: project.id, add: [epic.id], remove: [enabled_type.id] } }
+
+        before do
+          create(:work_package, project:, type: enabled_type)
+        end
+
+        it "enables none of the added types" do
+          expect { mcp_request }.not_to change { project.reload.enabled_types.to_a }
+
+          expect(result_item.fetch("error")).to include("still in use by work packages: Task")
+        end
+      end
     end
 
     describe "invalid input" do

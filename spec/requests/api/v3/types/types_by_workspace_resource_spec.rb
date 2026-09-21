@@ -144,7 +144,8 @@ RSpec.describe "/api/v3/projects/:id/types" do
         expect(last_response).to have_http_status(422)
         expect(JSON.parse(last_response.body)["errorIdentifier"])
           .to eq("urn:openproject-org:api:v3:errors:PropertyConstraintViolation")
-        expect(JSON.parse(last_response.body)["message"]).to include("Cannot assign a variant and its parent")
+        expect(JSON.parse(last_response.body)["message"])
+          .to eq("Types #{I18n.t('activerecord.errors.models.project.attributes.types.cannot_assign_variant_and_parent')}")
         expect(ProjectType.find_by(project_id: project.id, type_id: type.id).variant)
           .to eq(already_activated_variant)
       end
