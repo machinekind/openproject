@@ -208,6 +208,32 @@ RSpec.describe McpTools::CreateBoardList do
       end
     end
 
+    context "with a board linked to a sprint" do
+      let!(:status) { create(:status, name: "In progress") }
+      let(:sprint) { create(:sprint, project:) }
+      let(:board) do
+        create(:board_grid,
+               project:,
+               name: "Task board",
+               linked: sprint,
+               options: { type: "action",
+                          attribute: "status",
+                          filters: [{ sprint_id: { operator: "=", values: [sprint.id.to_s] } }] })
+      end
+      let(:call_args) { { board_id: board.id, value: status.id } }
+      let(:expected_filter) { { status_id: { operator: "=", values: [status.id.to_s] } } }
+      let(:expected_name) { "In progress" }
+
+      it_behaves_like "a created list"
+
+      it "keeps the board linked to its sprint" do
+        mcp_request
+
+        expect(board.reload.linked).to eq(sprint)
+        expect(board.options[:filters]).to eq([{ sprint_id: { operator: "=", values: [sprint.id.to_s] } }])
+      end
+    end
+
     context "with an assignee board" do
       let(:board) { action_board(Boards::AssigneeBoardCreateService, "assignee") }
       let(:assignee) do

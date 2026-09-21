@@ -86,7 +86,7 @@ These tools exist only in this fork; upstream OpenProject's MCP server cannot do
 | Which types are enabled | `list_project_types` | `{"project_id": 8}`. Numeric id only. |
 | Enable a type | `update_project_types` | `{"project_id": 8, "add": [5], "remove": [3]}`. Ids from `list_types`. A type still used by work packages cannot be removed. |
 | Which modules are on | `list_project_modules` | `{"project_id": "wojtek"}`. Returns every module with its `name`, `enabled`, `dependencies` and enterprise state. |
-| Turn a module on or off | `update_project_modules` | `{"project_id": "wojtek", "enable": ["board_view"]}`. A new project has no `board_view`, so enable it before creating a board. Dependencies are never enabled implicitly — pass them in the same call. |
+| Turn a module on or off | `update_project_modules` | `{"project_id": "wojtek", "enable": ["board_view"]}`. New projects get the instance's default modules, which normally include `board_view`; enable it only when a board tool answers "The Boards module is not enabled in this project." Dependencies are never enabled implicitly — pass them in the same call. |
 
 Order: user, then group with that user, then membership of the group in the project, then work packages. Adding a group to a project gives every member of the group the role, including people added later.
 
@@ -94,7 +94,7 @@ Order: user, then group with that user, then membership of the group in the proj
 
 ## Boards
 
-Board tools come from the Boards module, so a project needs `board_view` enabled before any of them works. Check with `list_project_modules` and enable with `update_project_modules`. Managing boards also needs the "Manage boards" permission.
+Board tools come from the Boards module, so a project needs `board_view` enabled before any of them works. It is normally on in new projects. If a board tool reports that the Boards module is not enabled, enable it with `update_project_modules`, which needs the "Select project modules" permission. Managing boards needs the separate "Manage boards" permission.
 
 | Need | Tool | Key payload |
 |---|---|---|
@@ -107,9 +107,9 @@ Board tools come from the Boards module, so a project needs `board_view` enabled
 
 `create_board_list`'s `value` is the id of what the list is built on: a status, a user or group, a version, a subproject, or the parent work package on a parent-child board. Pass `null` on an assignee board for the unassigned list. A board takes one list per value: a value that already has a list, such as the default status of a new status board or an open version of a new version board, is rejected with "The board already has a list for this value." `value` is ignored on a basic board. `name` is optional and defaults to the value's own name. Call the tool once per column.
 
-`update_board`'s `filters` use the APIv3 filter form, with values as strings, and apply to every list of the board. The array replaces the filters the board has; `[]` removes them all. Pass `name`, `filters` or both. A board managed by the backlogs module rejects filter changes.
+`update_board`'s `filters` use the APIv3 filter form, with values as strings, and apply to every list of the board. The array replaces the filters the board has; `[]` removes them all. Pass `name`, `filters` or both. A backlogs sprint task board rejects filter changes, because its sprint scoping lives in that array. It is otherwise a status board: `create_board_list` adds a status column to it as the UI does, and the next sprint's board copies its columns.
 
-Order for a new initiative: enable `board_view`, `create_board`, one `create_board_list` per column, then `update_board` for the filters.
+Order for a new initiative: `create_board` (enable `board_view` first only if it reports the module is missing), one `create_board_list` per column, then `update_board` for the filters.
 
 ## Reporting back
 

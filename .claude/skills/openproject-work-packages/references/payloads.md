@@ -81,7 +81,7 @@ Hierarchy is not a relation; set `_links.parent` on the child instead.
 | Not available on this instance: ... / Unknown module names: ... | A name passed to `update_project_modules` is misspelled or its module is not installed. | Take names from `list_project_modules`; the message also lists the valid ones. |
 | The Boards module is not enabled in this project. | `board_view` is off in the project. | `update_project_modules` with `{"enable": ["board_view"]}`. |
 | The given board could not be found. | Wrong id, the token's user cannot see the board, or `board_view` is off in its project. | Run `search_boards`, then `list_project_modules`. |
-| Lists cannot be added to a board of this type. | The board has no list attribute this tool knows, as the backlogs sprint task board does not. | Only boards made with `create_board` take lists here; a sprint task board follows its sprint. |
+| Lists cannot be added to a board of this type. | The board is an action board whose attribute is not status, assignee, version, subproject or subtasks. No shipped board is; a backlogs sprint task board is a status board and takes lists. | Read the board's `options.attribute` from `search_boards`; add the list in the UI if the attribute comes from a plugin. |
 
 ## Group, user and membership payloads
 
