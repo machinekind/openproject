@@ -625,6 +625,8 @@ paths:
     "$ref": "./paths/workspace_queries_schema.yml"
   "/api/v3/workspaces/{id}/types":
     "$ref": "./paths/workspace_types.yml"
+  "/api/v3/workspaces/{id}/types/{type_id}":
+    "$ref": "./paths/workspace_type.yml"
   "/api/v3/workspaces/{id}/work_packages":
     "$ref": "./paths/workspace_work_packages.yml"
   "/api/v3/workspaces/{id}/work_packages/form":

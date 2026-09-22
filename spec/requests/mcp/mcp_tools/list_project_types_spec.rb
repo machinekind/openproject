@@ -30,7 +30,7 @@
 
 require "spec_helper"
 
-RSpec.describe McpTools::DeleteTimeEntry do
+RSpec.describe McpTools::ListProjectTypes do
   subject(:mcp_request) do
     header "Authorization", "Bearer #{access_token.plaintext_token}"
     header "Content-Type", "application/json"
@@ -38,27 +38,26 @@ RSpec.describe McpTools::DeleteTimeEntry do
   end
 
   let(:access_token) { create(:oauth_access_token, scopes: "mcp", resource_owner: user) }
-  let(:user) { create(:admin) }
+  let(:user) { create(:user, member_with_permissions: { project => permissions }) }
+  let(:permissions) { %i[view_work_packages] }
   let(:request_body) do
     {
       jsonrpc: "2.0",
       id: "Test-Request",
       method: "tools/call",
       params: {
-        name: "delete_time_entry",
+        name: "list_project_types",
         arguments: call_args
       }
     }
   end
-  let(:call_args) do
-    {
-      id: time_entry.id
-    }
-  end
+  let(:call_args) { { project_id: project.id } }
   let(:parsed_results) { JSON.parse(last_response.body).fetch("result") }
   let(:result_item) { parsed_results.fetch("structuredContent") }
 
-  let(:time_entry) { create(:time_entry) }
+  let(:enabled_type) { create(:type, name: "Epic") }
+  let!(:other_type) { create(:type, name: "Risk") }
+  let(:project) { create(:project, types: [enabled_type]) }
 
   let(:server_config) { create(:mcp_configuration, identifier: "mcp_server") }
   let(:tool_config) { create(:mcp_configuration, identifier: described_class.qualified_name) }
@@ -66,32 +65,80 @@ RSpec.describe McpTools::DeleteTimeEntry do
   before do
     server_config.save!
     tool_config.save!
-
-    time_entry.save! # making sure creation already happens before expect blocks
   end
 
   context "when the MCP server is enabled" do
     it_behaves_like "MCP text tool"
 
-    it "deletes the time entry" do
-      expect { mcp_request }.to change(TimeEntry, :count).from(1).to(0)
-    end
-
-    it "responds with a properly formatted time entry" do
+    it "lists only the types enabled in the project" do
       mcp_request
-      expect(parsed_results.fetch("structuredContent").to_json).to match_json_schema.from_docs("time_entry_model")
+
+      expect(result_item.dig("_embedded", "elements").pluck("name")).to eq(["Epic"])
     end
 
-    context "when deleting a non-existing entry" do
-      let(:call_args) do
-        {
-          id: time_entry.id + 100
-        }
+    it "responds with properly formatted types" do
+      mcp_request
+
+      expect(result_item.to_json).to match_json_schema.from_docs("types_by_workspace_model")
+    end
+
+    context "when the user may only manage types" do
+      let(:permissions) { %i[manage_types] }
+
+      it "lists the types" do
+        mcp_request
+
+        expect(result_item.dig("_embedded", "elements").pluck("name")).to eq(["Epic"])
       end
+    end
+
+    context "when the user is an admin without membership" do
+      let(:user) { create(:admin) }
+
+      it "lists the types" do
+        mcp_request
+
+        expect(result_item.dig("_embedded", "elements").pluck("name")).to eq(["Epic"])
+      end
+    end
+
+    context "when the user lacks both permissions in the project" do
+      let(:permissions) { [] }
 
       it "responds with an error" do
         mcp_request
-        expect(result_item.fetch("error")).to eq("The given time entry could not be found.")
+
+        expect(result_item.fetch("error")).to eq("The given project could not be found.")
+      end
+    end
+
+    context "when the user is no member of the project" do
+      let(:user) { create(:user) }
+
+      it "responds with an error" do
+        mcp_request
+
+        expect(result_item.fetch("error")).to eq("The given project could not be found.")
+      end
+    end
+
+    context "when the project is given by its identifier" do
+      let(:call_args) { { project_id: project.identifier } }
+
+      it "finds the project" do
+        mcp_request
+
+        expect(result_item.dig("_embedded", "elements").pluck("name")).to eq(["Epic"])
+      end
+    end
+
+    context "when the project does not exist" do
+      let(:call_args) { { project_id: project.id + 100 } }
+
+      it "responds with an error" do
+        mcp_request
+
+        expect(result_item.fetch("error")).to eq("The given project could not be found.")
       end
     end
   end
@@ -101,6 +148,7 @@ RSpec.describe McpTools::DeleteTimeEntry do
 
     it "responds with a 404" do
       mcp_request
+
       expect(last_response).to have_http_status(404)
     end
   end

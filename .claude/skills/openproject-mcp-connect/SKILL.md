@@ -9,6 +9,9 @@ The endpoint is the instance's base URL plus `/mcp`, for example `http://localho
 `https://<host>/mcp` for a deployed instance. This fork serves it without an Enterprise token. Authentication,
 user permissions and the administrator's server and tool switches work as in upstream.
 
+Besides upstream's work package tools, this fork serves tools for projects, groups, users, memberships, roles,
+project types, project modules and boards.
+
 ## Steps
 
 1. If any `mcp__openproject-*__current_user` tool exists, call it. A returned user means the connection works.
