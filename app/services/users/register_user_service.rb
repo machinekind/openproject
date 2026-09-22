@@ -30,16 +30,18 @@
 
 module Users
   class RegisterUserService
-    attr_reader :user
+    attr_reader :user, :invite_link
 
-    def initialize(user)
+    def initialize(user, invite_link: nil)
       @user = user
+      @invite_link = invite_link
     end
 
     def call
       %i[
         ensure_user_limit_not_reached!
         register_invited_user
+        register_via_invite_link
         register_ldap_user
         ensure_provider_not_limited!
         register_omniauth_user
@@ -99,6 +101,29 @@ module Users
       with_saved_user_result(success_message: I18n.t(:notice_account_registered_and_logged_in)) do
         Rails.logger.info { "User #{user.login} was successfully activated after invitation." }
       end
+    end
+
+    ##
+    # Try to register a user who followed a self-registration invite link,
+    # bypassing the self registration settings
+    def register_via_invite_link
+      return if invite_link.nil?
+
+      user.activate
+
+      with_saved_user_result(success_message: I18n.t(:notice_account_registered_and_logged_in)) do
+        add_invite_link_membership
+        Rails.logger.info { "User #{user.login} was successfully activated through an invite link." }
+      end
+    end
+
+    def add_invite_link_membership
+      call = ::Members::CreateFromInviteLinkService.new(invite_link:, user:).call
+      return if call.success?
+
+      Rails.logger.error { "Failed to add #{user.login} to the invite link project: #{call.message}" }
+    rescue StandardError => e
+      Rails.logger.error { "Failed to add #{user.login} to the invite link project: #{e}" }
     end
 
     ##

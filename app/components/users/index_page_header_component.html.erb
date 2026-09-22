@@ -30,6 +30,14 @@
          ) do |item| %>
         <% item.with_leading_visual_icon(icon: :gear) %>
       <% end %>
+      <% menu.with_item(
+           tag: :a,
+           label: t("invite_links.button"),
+           href: invite_link_users_path,
+           content_arguments: { data: { controller: "async-dialog", test_selector: "invite-link-button" }, rel: "nofollow" }
+         ) do |item| %>
+        <% item.with_leading_visual_icon(icon: :link) %>
+      <% end %>
     <% end %>
   <% end %>
 <% end %>

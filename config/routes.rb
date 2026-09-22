@@ -115,6 +115,7 @@ Rails.application.routes.draw do
     get "/account/password_recovery", action: "password_recovery"
     post "/account/set_recovered_password", action: "set_recovered_password"
     match "/account/register", action: "register", via: %i[get post patch]
+    get "/account/join/:token", action: "join", as: "account_join"
     get "/account/activate", action: "activate"
 
     match "/login", action: "login", as: "signin", via: %i[get post]
@@ -637,6 +638,8 @@ Rails.application.routes.draw do
 
         get :autocomplete_for_member
         get :menu, to: "members/menus#show"
+        get :invite_link
+        post :create_invite_link
       end
     end
 
@@ -1194,6 +1197,8 @@ Rails.application.routes.draw do
   resources :users, constraints: { id: /(\d+|me)/ }, except: :edit do
     collection do
       get :configure_view_modal
+      get :invite_link
+      post :create_invite_link
     end
     resources :memberships, controller: "users/memberships", only: %i[update create destroy]
     resources :working_hours, controller: "users/working_hours", except: [:index]

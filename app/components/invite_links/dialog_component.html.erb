@@ -1,0 +1,94 @@
+<%#-- copyright
+OpenProject is an open source project management software.
+Copyright (C) the OpenProject GmbH
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License version 3.
+
+OpenProject is a fork of ChiliProject, which is a fork of Redmine. The copyright follows:
+Copyright (C) 2006-2013 Jean-Philippe Lang
+Copyright (C) 2010-2013 the ChiliProject Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+See COPYRIGHT and LICENSE files for more details.
+
+++#%>
+<%=
+  render(
+    Primer::Alpha::Dialog.new(
+      id: DIALOG_ID,
+      title: t("invite_links.title"),
+      size: :medium_portrait
+    )
+  ) do |dialog|
+    dialog.with_body do
+      form_with(
+        id: FORM_ID,
+        url: form_url,
+        method: :post,
+        data: { turbo: true }
+      ) do
+        flex_layout do |flex|
+          flex.with_row(mb: 3) do
+            render(Primer::Beta::Text.new) { t(link_available? ? description_key : empty_key) }
+          end
+
+          if link_available?
+            flex.with_row(mb: 2) do
+              render(OpPrimer::CopyToClipboardComponent.new(invite_url, test_selector: "invite-link"))
+            end
+            flex.with_row(mb: @project ? 3 : 0) do
+              render(Primer::Beta::Text.new(color: :muted, font_size: :small)) do
+                t("invite_links.expires_at", date: expires_at)
+              end
+            end
+          end
+
+          if @project
+            flex.with_row do
+              render(
+                Primer::Alpha::Select.new(
+                  name: :role_id,
+                  label: t("invite_links.role_label"),
+                  caption: t("invite_links.role_caption"),
+                  data: { test_selector: "invite-link-role" }
+                )
+              ) do |select|
+                roles.each do |role|
+                  select.option(label: role.name, value: role.id.to_s, selected: selected_role_id == role.id)
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+
+    dialog.with_footer(show_divider: true) do
+      concat(render(Primer::Beta::Button.new(data: { close_dialog_id: DIALOG_ID })) { t(:button_close) })
+      concat(
+        render(
+          Primer::Beta::Button.new(
+            scheme: link_available? ? :default : :primary,
+            form: FORM_ID,
+            type: :submit,
+            test_selector: "generate-invite-link"
+          )
+        ) { t(link_available? ? "invite_links.generate_new" : "invite_links.generate") }
+      )
+    end
+  end
+%>

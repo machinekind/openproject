@@ -35,6 +35,20 @@ FactoryBot.define do
     user
   end
 
+  factory :invite_link_token, class: "::Token::InviteLink" do
+    user
+
+    transient do
+      project { nil }
+      role { nil }
+    end
+
+    after(:build) do |token, evaluator|
+      token.project_id = evaluator.project&.id
+      token.role_id = evaluator.role&.id
+    end
+  end
+
   factory :api_token, class: "::Token::API" do
     user
     token_name { "my token name" }

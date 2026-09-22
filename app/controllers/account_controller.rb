@@ -46,6 +46,7 @@ class AccountController < ApplicationController
                              :password_recovery,
                              :set_recovered_password,
                              :register,
+                             :join,
                              :activate,
                              :consent,
                              :confirm_consent,
@@ -189,6 +190,19 @@ class AccountController < ApplicationController
     end
   end
 
+  # Multi-use self-registration link, see Token::InviteLink
+  def join
+    token = ::Token::InviteLink.find_by_plaintext_value(params[:token])
+
+    if token.nil? || token.expired?
+      invalid_invite_link_and_redirect
+    elsif User.current.logged?
+      join_as_current_user(token)
+    else
+      remember_invite_link_and_register(token)
+    end
+  end
+
   # Token based account activation
   def activate
     token = ::Token::Invitation.find_by_plaintext_value(params[:token])
@@ -235,6 +249,37 @@ class AccountController < ApplicationController
   end
 
   private
+
+  def invalid_invite_link_and_redirect
+    flash[:error] = I18n.t("account.invite_link.invalid")
+    redirect_to signin_path
+  end
+
+  def remember_invite_link_and_register(token)
+    session[:invite_link_token] = token.value
+    redirect_to account_register_path
+  end
+
+  def join_as_current_user(token)
+    if token.global?
+      flash[:notice] = I18n.t("account.invite_link.already_signed_in")
+      return redirect_to home_url
+    end
+
+    add_invite_link_membership(token)
+
+    redirect_to project_path(token.project)
+  end
+
+  def add_invite_link_membership(token)
+    call = ::Members::CreateFromInviteLinkService.new(invite_link: token, user: User.current).call
+
+    if call.success?
+      flash[:notice] = I18n.t("account.invite_link.joined_project", project: token.project.name)
+    else
+      flash[:error] = call.message
+    end
+  end
 
   def handle_expired_token(token)
     send_activation_email! token.user
@@ -315,13 +360,19 @@ class AccountController < ApplicationController
   end
 
   def allow_registration?
+    return true if registration_unlocked_by_token?
+
     allow = Setting::SelfRegistration.enabled? && Users::PasswordLogin.enabled?
 
-    invited = session[:invitation_token].present?
-    get = request.get? && allow
-    post = (request.post? || request.patch?) && (session[:auth_source_registration].present? || allow)
+    if request.post? || request.patch?
+      session[:auth_source_registration].present? || allow
+    else
+      request.get? && allow
+    end
+  end
 
-    invited || get || post
+  def registration_unlocked_by_token?
+    session[:invitation_token].present? || invite_link_from_session.present?
   end
 
   def allow_lost_password_recovery?

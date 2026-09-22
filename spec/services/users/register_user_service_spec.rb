@@ -60,6 +60,63 @@ RSpec.describe Users::RegisterUserService, with_ee: %i[sso_auth_providers] do
     end
   end
 
+  describe "#register_via_invite_link" do
+    shared_let(:creator) { create(:admin) }
+    shared_let(:project) { create(:project) }
+    shared_let(:role) { create(:project_role) }
+
+    let(:invite_link) { create(:invite_link_token, user: creator, project:, role:) }
+
+    it "activates the user and adds the project membership regardless of settings" do
+      with_all_registration_options do |_type|
+        user = build(:user, status: Principal.statuses[:registered])
+
+        call = described_class.new(user, invite_link:).call
+
+        expect(call).to be_success
+        expect(call.message).to eq I18n.t(:notice_account_registered_and_logged_in)
+        expect(user.reload).to be_active
+        expect(user.memberships.map(&:project)).to contain_exactly(project)
+        expect(user.memberships.first.roles).to contain_exactly(role)
+      end
+    end
+
+    context "with a global link" do
+      let(:invite_link) { create(:invite_link_token, user: creator) }
+
+      it "activates the user without a membership" do
+        user = build(:user, status: Principal.statuses[:registered])
+
+        call = described_class.new(user, invite_link:).call
+
+        expect(call).to be_success
+        expect(user.reload).to be_active
+        expect(user.memberships).to be_empty
+      end
+    end
+
+    it "activates the user even when the membership cannot be created" do
+      allow(Members::CreateFromInviteLinkService).to receive(:new).and_raise("boom")
+      user = build(:user, status: Principal.statuses[:registered])
+
+      call = described_class.new(user, invite_link:).call
+
+      expect(call).to be_success
+      expect(user.reload).to be_active
+      expect(user.memberships).to be_empty
+    end
+
+    it "does not apply without an invite link",
+       with_settings: { self_registration: Setting::SelfRegistration.disabled } do
+      user = build(:user, status: Principal.statuses[:registered])
+
+      call = described_class.new(user).call
+
+      expect(call).to be_failure
+      expect(call.message).to eq I18n.t("account.error_self_registration_disabled")
+    end
+  end
+
   describe "#register_ldap_user" do
     it "tries to activate that user regardless of settings" do
       with_all_registration_options do |_type|

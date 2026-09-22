@@ -292,6 +292,16 @@ class UsersController < ApplicationController
     redirect_to helpers.allowed_management_user_profile_path(@user)
   end
 
+  def invite_link
+    respond_with_dialog InviteLinks::DialogComponent.new(link: active_invite_link)
+  end
+
+  def create_invite_link
+    Token::InviteLink.create!(user: current_user)
+
+    respond_with_dialog InviteLinks::DialogComponent.new(link: active_invite_link)
+  end
+
   def invitation_link
     respond_with_dialog Users::InvitationLinkDialogComponent.new(user: @user)
   end
@@ -390,6 +400,10 @@ class UsersController < ApplicationController
 
       false
     end
+  end
+
+  def active_invite_link
+    Token::InviteLink.active.global.order(created_at: :desc).first
   end
 
   def authorize_admin_management

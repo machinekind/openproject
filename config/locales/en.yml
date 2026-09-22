@@ -72,6 +72,10 @@ en:
     error_self_registration_limited_provider: >
       User registration is limited for the Single sign-on provider '%{name}'. Please ask an administrator to activate the
       account for you or change the self registration limit for this provider.
+    invite_link:
+      already_signed_in: "You are already signed in. Invite links are only needed to create a new account."
+      invalid: "This invite link is invalid or has expired. Ask whoever shared it with you for a new one."
+      joined_project: "You are now a member of %{project}."
     login_with_auth_provider: "or sign in with your existing account"
     omniauth_direct_login_continue: "Continue to sign in"
     omniauth_direct_login_redirecting: "Redirecting you to your identity provider…"
@@ -3368,6 +3372,20 @@ en:
   instructions_after_error_link: "You can try to sign in again by clicking [here](signin_url). If the error persists, ask your admin for help."
   instructions_after_logout_link: "You can sign in again by clicking [here](signin_url)."
   instructions_after_registration_link: "You can sign in as soon as your account has been activated by clicking [here](signin_url)."
+
+  invite_links:
+    button: "Invite link"
+    description_global: "Anyone with this link can create an account on this instance within the next 24 hours. Accounts are active right away, without an activation email or an administrator approval."
+    description_project: "Anyone with this link can create an account and join this project within the next 24 hours. Accounts are active right away, without an activation email or an administrator approval."
+    error_invalid_role: "Select a role that can be given to project members."
+    expires_at: "This link expires on %{date}."
+    generate: "Generate link"
+    generate_new: "Generate new link"
+    no_link_global: "There is no active invite link. Generate one to let people create their own account, active right away and valid for 24 hours."
+    no_link_project: "There is no active invite link for this project. Generate one to let people create their own account and join this project, active right away and valid for 24 hours."
+    role_caption: "Everyone who joins through this link receives this role. Generating a new link replaces the current one."
+    role_label: "Role"
+    title: "Invite link"
 
   journals:
     cause_descriptions:
