@@ -106,19 +106,19 @@ post:
               type: object
           type: object
   responses:
-    '201':
-      content:
-        application/hal+json:
-          schema:
-            "$ref": "../components/schemas/type_model.yml"
-      description: Created
-      headers: {}
     '200':
       content:
         application/hal+json:
           schema:
             "$ref": "../components/schemas/type_model.yml"
       description: Returned if the type was already activated in the workspace.
+      headers: {}
+    '201':
+      content:
+        application/hal+json:
+          schema:
+            "$ref": "../components/schemas/type_model.yml"
+      description: Created
       headers: {}
     '400':
       $ref: "../components/responses/invalid_request_body.yml"
@@ -148,11 +148,15 @@ post:
               value:
                 _type: Error
                 errorIdentifier: urn:openproject-org:api:v3:errors:NotFound
-                message: The specified workspace does not exist.
+                message: The requested resource could not be found.
       description: |-
         Returned if the workspace does not exist, the client does not have sufficient permissions
         to see it, or the specified type does not exist.
       headers: {}
+    '406':
+      $ref: "../components/responses/missing_content_type.yml"
+    '415':
+      $ref: "../components/responses/unsupported_media_type.yml"
     '422':
       content:
         application/hal+json:
@@ -167,10 +171,6 @@ post:
       description: |-
         Returned if the workspace already uses a different variant of the specified type.
       headers: {}
-    '406':
-      $ref: "../components/responses/missing_content_type.yml"
-    '415':
-      $ref: "../components/responses/unsupported_media_type.yml"
   tags:
     - Types
     - Workspaces

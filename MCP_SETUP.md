@@ -84,10 +84,11 @@ their `data` argument; updates also need the work package `id` and its current
 Configuring a project needs no browser. `list_project_types` and
 `update_project_types` read and change the work package types enabled in a
 project. `list_project_modules` and `update_project_modules` do the same for its
-modules. `search_boards`, `create_board`, `create_board_list`, and
-`update_board` manage boards and their filters; the Boards module registers
-them, and they act only in a project where `board_view` is enabled. These tools
-take flat arguments rather than a `data` payload.
+modules. All four take the project's numeric id or its identifier.
+`search_boards`, `create_board`, `create_board_list`, and `update_board` manage
+boards and their filters; the Boards module registers them, and they act only in
+a project where `board_view` is enabled. These tools take flat arguments rather
+than a `data` payload.
 
 Check the returned payload's `error` field even if the MCP envelope has
 `isError: false`; permission and validation failures can use that response shape.
