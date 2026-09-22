@@ -40,17 +40,14 @@ module McpTools
       "subtasks" => :parent
     }.freeze
 
-    # The filter names getActionFiltersFromWidget (board-list-container.component.ts) reads to know which
-    # values a board already uses. The first one is written, all of them are recognised.
-    WIDGET_FILTER_NAMES = {
-      "status" => %w[status_id status],
-      "assignee" => %w[assignee assignee_id assigned_to_id],
-      "version" => %w[version_id version],
-      "subproject" => %w[onlySubproject onlySubproject_id only_subproject_id],
-      "subtasks" => %w[parent parent_id]
+    MISSING_VALUE_ERRORS = {
+      "status" => "Pass the value the new list shall show: a status ID.",
+      "assignee" => "Pass a value for the list, or null for the list of unassigned work packages.",
+      "version" => "Pass the value the new list shall show: a version ID.",
+      "subproject" => "Pass the value the new list shall show: a subproject ID.",
+      "subtasks" => "Pass the value the new list shall show: the ID of the parent work package."
     }.freeze
 
-    FREE_LIST_FILTER = { manual_sort: { operator: "ow", values: [] } }.freeze
     FREE_LIST_NAME = "Unnamed list"
     DUPLICATE_LIST_ERROR = "The board already has a list for this value."
 
@@ -95,24 +92,34 @@ module McpTools
 
     private
 
+    def free_list_filter
+      { manual_sort: { operator: "ow", values: [] } }
+    end
+
     def list_filter(board, rest)
-      return Success([FREE_LIST_FILTER, FREE_LIST_NAME]) if board.board_type == :free
+      return Success([free_list_filter, FREE_LIST_NAME]) if board.board_type == :free
 
       attribute = board.board_type_attribute
       key = FILTER_KEYS[attribute]
       return Failure("Lists cannot be added to a board of this type.") if key.nil?
-      return unassigned_filter(key, rest) if attribute == "assignee" && rest[:value].nil?
+
+      value_filter(board, attribute, key, rest)
+    end
+
+    def value_filter(board, attribute, key, rest)
+      return unassigned_filter(key) if unassigned?(attribute, rest)
+      return Failure(MISSING_VALUE_ERRORS.fetch(attribute)) if rest[:value].nil?
 
       resolve_value(board, attribute, rest[:value]).fmap do |value|
         [{ key => { operator: "=", values: [value.id.to_s] } }, list_name(value)]
       end
     end
 
-    def unassigned_filter(key, rest)
-      unless rest.key?(:value)
-        return Failure("Pass a value for the list, or null for the list of unassigned work packages.")
-      end
+    def unassigned?(attribute, rest)
+      attribute == "assignee" && rest.key?(:value) && rest[:value].nil?
+    end
 
+    def unassigned_filter(key)
       Success([{ key => { operator: "!*", values: [] } }, I18n.t(:label_none)])
     end
 
@@ -123,6 +130,7 @@ module McpTools
       when "version" then version_value(board.project, id)
       when "subproject" then subproject_value(board.project, id)
       when "subtasks" then parent_value(board.project, id)
+      else Failure("Lists cannot be added to a board of this type.")
       end
     end
 
@@ -188,7 +196,7 @@ module McpTools
     end
 
     def list_exists?(board, filter)
-      names = WIDGET_FILTER_NAMES[board.board_type_attribute]
+      names = BoardListFilters::WIDGET_NAMES[board.board_type_attribute]
       return false if board.board_type == :free || names.nil?
 
       value = list_value(filter.values.first)
@@ -212,7 +220,7 @@ module McpTools
     def widget_filter(board, filter)
       return filter if board.board_type == :free
 
-      { WIDGET_FILTER_NAMES.fetch(board.board_type_attribute).first.to_sym => filter.values.first }
+      { BoardListFilters::WIDGET_NAMES.fetch(board.board_type_attribute).first.to_sym => filter.values.first }
     end
 
     def create_query_params(board, filter, name)

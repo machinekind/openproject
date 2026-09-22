@@ -32,11 +32,13 @@ module McpTools
   class UpdateBoard < Base
     include BoardAuthorization
 
+    FILTER_SHAPE_ERROR = 'Each filter must be an object like { "type": { "operator": "=", "values": ["5"] } }.'
+
     default_title "Update board"
     default_description "Rename a work package board or set the filters applied to all of its lists."
 
     name "update_board"
-    annotations read_only: false, idempotent: true, destructive: false
+    annotations read_only: false, idempotent: true, destructive: true
 
     input_schema(
       additionalProperties: false,
@@ -48,7 +50,8 @@ module McpTools
           type: "array",
           description: "Filters applied to every list of the board, in the format accepted by APIv3, e.g. " \
                        "[{ \"type\": { \"operator\": \"=\", \"values\": [\"5\"] } }]. The array replaces the " \
-                       "filters the board currently has; pass an empty array to remove all of them.",
+                       "filters the board currently has; pass an empty array to remove all of them. An action " \
+                       "board rejects a filter on the attribute its lists are built on.",
           items: { type: "object" }
         }
       }
@@ -81,6 +84,15 @@ module McpTools
     end
 
     def normalized_filters(board, filters)
+      return Failure(FILTER_SHAPE_ERROR) unless filters.all? { |filter| single_condition?(filter) }
+
+      parsed = parse_filters(board, filters)
+      return parsed if parsed.failure?
+
+      action_attribute_error(board, parsed.value!) || parsed
+    end
+
+    def parse_filters(board, filters)
       query = scratch_query(board)
       result = ::API::V3::UpdateQueryFromV3ParamsService
                  .new(query, current_user)
@@ -89,6 +101,18 @@ module McpTools
       return Failure(result.errors.full_messages.join(" ")) if result.failure?
 
       Success(JSON.parse(::API::V3::Queries::QueryParamsRepresenter.new(query).to_h[:filters]))
+    end
+
+    def single_condition?(filter)
+      filter.is_a?(Hash) && filter.size == 1 && filter.values.first.is_a?(Hash)
+    end
+
+    def action_attribute_error(board, normalized)
+      names = BoardListFilters::APIV3_NAMES[board.board_type_attribute]
+      return nil if names.nil?
+      return nil if normalized.none? { |filter| names.intersect?(filter.keys.map(&:to_s)) }
+
+      Failure(BoardListFilters::ACTION_FILTER_ERRORS.fetch(board.board_type_attribute))
     end
 
     def scratch_query(board)
