@@ -196,6 +196,8 @@ RSpec.describe McpTools::UpdateProjectTypes do
 
         it "enables none of them" do
           expect { mcp_request }.not_to change(ProjectType, :count)
+
+          expect(result_item.fetch("error")).to include("Cannot assign a variant and its parent")
         end
       end
 
@@ -210,6 +212,16 @@ RSpec.describe McpTools::UpdateProjectTypes do
           expect { mcp_request }.not_to change { project.reload.enabled_types.to_a }
 
           expect(result_item.fetch("error")).to include("still in use by work packages: Task")
+        end
+      end
+    end
+
+    describe "project lookup" do
+      context "when the project is given by its identifier" do
+        let(:call_args) { { project_id: project.identifier, add: [epic.id] } }
+
+        it "finds the project" do
+          expect { mcp_request }.to change { project.reload.enabled_types.count }.from(1).to(2)
         end
       end
     end

@@ -31,6 +31,7 @@
 module McpTools
   class CreateBoard < Base
     include BoardAuthorization
+    include ProjectLookup
 
     SERVICES = {
       "basic" => ::Boards::BasicBoardCreateService,
@@ -51,7 +52,10 @@ module McpTools
       additionalProperties: false,
       required: %i[project_id name type],
       properties: {
-        project_id: { type: "number", description: "ID of the project the board is created in." },
+        project_id: {
+          type: %w[string number],
+          description: "The ID or identifier of the project the board is created in."
+        },
         name: { type: "string", description: "Name of the board." },
         type: {
           type: "string",
@@ -65,7 +69,7 @@ module McpTools
     )
 
     def call(project_id:, name:, type:)
-      project = Project.visible(current_user).find_by(id: project_id)
+      project = find_project(project_id)
       return Failure("The given project could not be found.") if project.nil?
 
       manageable_project(project).bind do

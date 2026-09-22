@@ -122,6 +122,16 @@ RSpec.describe McpTools::ListProjectTypes do
       end
     end
 
+    context "when the project is given by its identifier" do
+      let(:call_args) { { project_id: project.identifier } }
+
+      it "finds the project" do
+        mcp_request
+
+        expect(result_item.dig("_embedded", "elements").pluck("name")).to eq(["Epic"])
+      end
+    end
+
     context "when the project does not exist" do
       let(:call_args) { { project_id: project.id + 100 } }
 

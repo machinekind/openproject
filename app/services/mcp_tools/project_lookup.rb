@@ -29,40 +29,13 @@
 #++
 
 module McpTools
-  class ProjectModulesTool < Base
-    include Redmine::I18n
-    include ProjectLookup
-
+  module ProjectLookup
     private
 
-    def modules_payload(project)
-      available = OpenProject::AccessControl.available_project_modules(sorted: true)
-      extras = project.enabled_module_names.map(&:to_sym) - available
-
-      {
-        projectId: project.id,
-        projectIdentifier: project.identifier,
-        modules: (available + extras).map { |name| module_payload(project, name, available) }
-      }
-    end
-
-    def module_payload(project, name, available)
-      entry = OpenProject::AccessControl.modules.find { |mod| mod[:name] == name }
-      feature = OpenProject::AccessControl.module_enterprise_feature?(name).presence
-
-      {
-        name: name.to_s,
-        label: l_or_humanize(name, prefix: "project_module_"),
-        enabled: project.module_enabled?(name),
-        available: available.include?(name),
-        dependencies: Array(entry&.dig(:dependencies)).map(&:to_s),
-        enterpriseFeature: feature,
-        enterpriseFeatureAvailable: feature.nil? || EnterpriseToken.allows_to?(feature)
-      }
-    end
-
-    def assignable_module_names(project)
-      OpenProject::AccessControl.available_project_modules.map(&:to_s) | project.enabled_module_names
+    def find_project(project_id)
+      ::Project.visible(current_user).find(project_id)
+    rescue ActiveRecord::RecordNotFound
+      nil
     end
   end
 end

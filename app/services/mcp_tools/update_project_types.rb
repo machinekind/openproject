@@ -29,9 +29,7 @@
 #++
 
 module McpTools
-  class UpdateProjectTypes < Base
-    include APIV3Helper
-
+  class UpdateProjectTypes < ProjectTypesTool
     default_title "Update project types"
     default_description "Enables and disables work package types in a project. " \
                         "Use the list_types tool to find type IDs."
@@ -44,17 +42,19 @@ module McpTools
       required: %i[project_id],
       properties: {
         project_id: {
-          type: "number",
-          description: "The ID of the project whose enabled work package types shall be changed."
+          type: %w[string number],
+          description: "The ID or identifier of the project whose enabled work package types shall be changed."
         },
         add: {
           type: "array",
           items: { type: "number" },
+          maxItems: 100,
           description: "IDs of work package types to enable in the project. Use the list_types tool to find type IDs."
         },
         remove: {
           type: "array",
           items: { type: "number" },
+          maxItems: 100,
           description: "IDs of work package types to disable in the project. " \
                        "A type that is still used by work packages in the project cannot be disabled."
         }
@@ -62,7 +62,7 @@ module McpTools
     )
 
     def call(project_id:, add: nil, remove: nil)
-      project = ::Project.visible(current_user).find_by(id: project_id)
+      project = find_project(project_id)
       return Failure("The given project could not be found.") if project.nil?
 
       error = change_types(project, Array(add).uniq, Array(remove).uniq)
@@ -89,8 +89,7 @@ module McpTools
       end
     end
 
-    # ActiveRecord::Rollback is swallowed by the transaction, which then returns nil, so the
-    # failure has to travel out in a local rather than as the block's value.
+    # ActiveRecord::Rollback is swallowed by the transaction, which then returns nil.
     def apply_all_or_nothing(project, add_ids, remove_ids)
       error = nil
 
@@ -111,7 +110,7 @@ module McpTools
         return "The given type has no base variant and cannot be enabled." if variant.nil?
 
         result = ::Projects::Types::AddService.new(user: current_user, model: project).call(variant:)
-        return result.message unless result.success?
+        return result.message.presence || "The given type could not be enabled." unless result.success?
       end
 
       nil
@@ -126,18 +125,10 @@ module McpTools
         result = ::Projects::Types::RemoveService
                    .new(user: current_user, model: project)
                    .call(variant: project.type_variant(type))
-        return result.message unless result.success?
+        return result.message.presence || "The given type could not be disabled." unless result.success?
       end
 
       nil
-    end
-
-    def type_collection(project)
-      API::V3::Types::TypeCollectionRepresenter.new(
-        project.enabled_types,
-        self_link: api_v3_paths.types_by_workspace(project.id),
-        current_user:
-      )
     end
   end
 end

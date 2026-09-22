@@ -29,9 +29,7 @@
 #++
 
 module McpTools
-  class ListProjectTypes < Base
-    include APIV3Helper
-
+  class ListProjectTypes < ProjectTypesTool
     default_title "List project types"
     default_description "Lists the work package types that are enabled in a project."
 
@@ -43,29 +41,19 @@ module McpTools
       required: %i[project_id],
       properties: {
         project_id: {
-          type: "number",
-          description: "The ID of the project whose enabled work package types shall be listed."
+          type: %w[string number],
+          description: "The ID or identifier of the project whose enabled work package types shall be listed."
         }
       }
     )
 
     def call(project_id:)
-      project = ::Project.visible(current_user).find_by(id: project_id)
+      project = find_project(project_id)
       if project.nil? || !current_user.allowed_in_project?(%i[view_work_packages manage_types], project)
         return Failure("The given project could not be found.")
       end
 
       Success(type_collection(project))
-    end
-
-    private
-
-    def type_collection(project)
-      API::V3::Types::TypeCollectionRepresenter.new(
-        project.enabled_types,
-        self_link: api_v3_paths.types_by_workspace(project.id),
-        current_user:
-      )
     end
   end
 end
