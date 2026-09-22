@@ -78,6 +78,14 @@ RSpec.describe McpTools::CreateProject do
       expect(project.identifier).to eq("wojtek")
     end
 
+    context "with defaults set", with_settings: { default_projects_modules: %w[work_package_tracking board_view] } do
+      it "enables the default modules" do
+        mcp_request
+
+        expect(Project.first.enabled_module_names).to contain_exactly("work_package_tracking", "board_view")
+      end
+    end
+
     it "responds with a properly formatted project" do
       mcp_request
 

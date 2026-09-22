@@ -68,7 +68,7 @@ Hierarchy is not a relation; set `_links.parent` on the child instead.
 
 | Error text | Cause | Fix |
 |---|---|---|
-| Type is not set to one of the allowed values. | Type not enabled in the project. | Enable it in Project settings, Work package types. Projects created via the API here start with none. |
+| Type is not set to one of the allowed values. | Type not enabled in the project. | Enable it with `update_project_types`. Projects created via the API here start with none. |
 | Parent cannot be a milestone. | Milestones cannot hold children. | Use a `precedes` relation to the milestone, or a Summary task or Epic as parent. |
 | Assignee is invalid. / Responsible is invalid. | Person is not a project member with an assignable role. | Add them with `create_membership`, or add their group. |
 | Project is invalid. | Wrong id, or the token's user cannot see it. | Re-run `search_projects`. |
@@ -77,7 +77,44 @@ Hierarchy is not a relation; set `_links.parent` on the child instead.
 | Status transition not allowed | Workflow forbids the jump for this type and role. | Call `list_statuses`, pick an allowed next status, or leave status unset on create. |
 | Workspace type is not set to one of the allowed values. | Only from raw API project creation. | Use `create_project`, which sets the workspace type. |
 | MCP server is not available. (HTTP 404) | MCP disabled in Administration. | Check Administration, AI, Model Context Protocol. This fork enables only the MCP entitlement without an Enterprise token. |
+| Types still in use by work packages: ... | `update_project_types` was asked to remove a type the project still uses. | Move or delete those work packages, or leave the type enabled. |
+| Not available on this instance: ... / Unknown module names: ... | A name passed to `update_project_modules` is misspelled or its module is not installed. | Take names from `list_project_modules`; the message also lists the valid ones. |
+| The Boards module is not enabled in this project. | `board_view` is off in the project. | `update_project_modules` with `{"enable": ["board_view"]}`. |
+| The given board could not be found. | Wrong id, the token's user cannot see the board, or `board_view` is off in its project. | Run `search_boards`, then `list_project_modules`. |
+| You are not allowed to manage boards in this project. | The token's user lacks "Manage boards", or one of the "Save views" and "Manage public views" permissions it depends on. | Give the user a role that has all three; the Member role has them. |
+| Lists cannot be added to a board of this type. | The board is an action board whose attribute is not status, assignee, version, subproject or subtasks. No shipped board is; a backlogs sprint task board is a status board and takes lists. | Read the board's `options.attribute` from `search_boards`; add the list in the UI if the attribute comes from a plugin. |
+| Pass the value the new list shall show: ... | `create_board_list` was called on an action board without a `value`. | Pass the id the list is built on; on an assignee board `null` asks for the unassigned list. |
+| Each filter must be an object like ... | An entry of `update_board`'s `filters` is not a single attribute mapped to a condition object. | Use `{"status": {"operator": "=", "values": ["5"]}}`, one attribute per entry. |
+| A status board filters its lists by status; add or remove lists instead. | `update_board` was given a filter on the attribute the board's lists are built on. The same holds for assignee, version, subproject and parent-child boards. | Use `create_board_list` for that attribute, and keep the board filters for other attributes. |
 
 ## Group, user and membership payloads
 
 Group members are set through the `members` link array on create or update. Invited users (`"status": "invited"`) need no password. Active users need `"password"`. A membership needs a principal (user or group), a project and at least one role; `list_roles` gives the ids and Member is the default choice for a team.
+
+## Project configuration and board arguments
+
+These tools take flat arguments, not a `data` payload.
+
+| Tool | Arguments |
+|---|---|
+| `list_project_types` | `project_id` (numeric id or identifier, required) |
+| `update_project_types` | `project_id` (numeric id or identifier, required), `add` (array of up to 100 type ids), `remove` (array of up to 100 type ids). At least one of `add` and `remove` is required, and an id must not appear in both. |
+| `list_project_modules` | `project_id` (numeric id or identifier, required). Any member of the project may call it. |
+| `update_project_modules` | `project_id` (numeric id or identifier, required), `enable` (array of up to 100 module names), `disable` (array of up to 100 module names). At least one of `enable` and `disable` is required, and a name must not appear in both. |
+| `search_boards` | `id`, `project_id`, `name` (partial, not case-sensitive), `page`. Results come back ordered by id, so pages do not overlap. |
+| `create_board` | `project_id` (numeric id or identifier, required), `name` (required), `type` (required: `basic`, `status`, `assignee`, `version`, `subproject`, `subtasks`) |
+| `create_board_list` | `board_id` (required), `value` (id of the status, assignee, version, subproject or parent work package, required on every action board; `null` for the unassigned list on an assignee board), `name` |
+| `update_board` | `id` (required), `name`, `filters` (APIv3 filter array, replaces the board's filters) |
+
+Enabling a type is all or nothing: if one id in `add` or `remove` fails, none of the changes in that call is kept. `update_project_modules` computes the new module list from the project's current one, so modules you do not name keep their state; dependencies are never enabled implicitly. A module gated by an enterprise feature can be enabled without a token, as on the settings page; the payload's `enterpriseFeatureAvailable` says whether the feature itself works.
+
+A parent-child board for an epic:
+
+```
+update_project_modules(project_id: 8, enable: ["board_view"])
+create_board(project_id: 8, name: "Locomotion", type: "subtasks")
+create_board_list(board_id: 12, value: 50)
+update_board(id: 12, filters: [{"type": {"operator": "=", "values": ["5"]}}])
+```
+
+The board filters apply to every list, so a board rejects a filter on the attribute its own lists are built on. `search_boards` reads them back from the board's `options`, and its lists from `widgets`, where each widget names the query it renders.

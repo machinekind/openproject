@@ -8,8 +8,8 @@ tools under **Administration → Artificial Intelligence (AI) → Model Context
 Protocol (MCP)**.
 
 The endpoint is the instance's base URL plus `/mcp`: `http://localhost:3000/mcp` for local development,
-`https://<host>/mcp` for a deployed instance. The additional project, group, user, membership, and role tools
-in this fork use OpenProject's normal contracts and permissions.
+`https://<host>/mcp` for a deployed instance. The additional project, group, user, membership, role, project
+configuration, and board tools in this fork use OpenProject's normal contracts and permissions.
 
 ## Authentication
 
@@ -80,6 +80,15 @@ Call `current_user`, `search_projects`, and `list_roles`. Check that the project
 setup tools are listed and enabled. Work-package tools accept API v3 payloads in
 their `data` argument; updates also need the work package `id` and its current
 `lockVersion`. Writes execute immediately. There is no preview step.
+
+Configuring a project needs no browser. `list_project_types` and
+`update_project_types` read and change the work package types enabled in a
+project. `list_project_modules` and `update_project_modules` do the same for its
+modules. All four take the project's numeric id or its identifier.
+`search_boards`, `create_board`, `create_board_list`, and `update_board` manage
+boards and their filters; the Boards module registers them, and they act only in
+a project where `board_view` is enabled. These tools take flat arguments rather
+than a `data` payload.
 
 Check the returned payload's `error` field even if the MCP envelope has
 `isError: false`; permission and validation failures can use that response shape.
