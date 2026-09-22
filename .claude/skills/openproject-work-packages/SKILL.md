@@ -76,6 +76,7 @@ These tools exist only in this fork; upstream OpenProject's MCP server cannot do
 | Person | `create_user` | `{"data": {"login": "marcin", "email": "...", "firstName": "...", "lastName": "...", "status": "invited"}}`. Create users as `invited`; they set their own password from the invitation mail. Never send a `password` through this tool: request parameters are logged. If the instance has no outgoing mail, an admin sets the password at `/users/<id>/edit`. |
 | Role ids | `list_roles` | Member is the normal choice for a team. |
 | Add to project | `create_membership` | `{"data": {"_links": {"principal": {"href": "/api/v3/groups/33"}, "project": {"href": "/api/v3/projects/8"}, "roles": [{"href": "/api/v3/roles/4"}]}}}` |
+| Invite people without accounts | `create_project_invite_link` | `{"project_id": 8, "role_id": 4}`. Returns a join URL that anyone can use to register and join the project with that role. Multi-use, expires after 24 hours, and replaces the project's previous link. Needs `manage_members` on the project. |
 
 Order: user, then group with that user, then membership of the group in the project, then work packages. Adding a group to a project gives every member of the group the role, including people added later.
 

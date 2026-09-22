@@ -48,6 +48,7 @@ Rails.application.config.to_prepare do
   McpTools.register McpTools::CreateGroup,
                     McpTools::CreateMembership,
                     McpTools::CreateProject,
+                    McpTools::CreateProjectInviteLink,
                     McpTools::CreateUser,
                     McpTools::CreateWorkPackage,
                     McpTools::CreateWorkPackageComment,
