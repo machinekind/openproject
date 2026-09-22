@@ -71,14 +71,13 @@ RSpec.describe "Users invitation link", :skip_csrf, type: :rails_request do
       end
     end
 
-    context "with create_user permission" do
+    context "with create_user permission but without admin" do
       current_user { create(:user, global_permissions: %i[create_user view_all_principals]) }
 
-      it "refuses to reveal the link of an admin" do
-        invited_admin = create(:admin, status: User.statuses[:invited])
-        create(:invitation_token, user: invited_admin)
+      it "is forbidden" do
+        create(:invitation_token, user: invited_user)
 
-        get invitation_link_user_path(invited_admin), headers: turbo_stream_headers
+        get invitation_link_user_path(invited_user), headers: turbo_stream_headers
 
         expect(response).to have_http_status(:forbidden)
       end
@@ -87,10 +86,10 @@ RSpec.describe "Users invitation link", :skip_csrf, type: :rails_request do
     context "without create_user permission" do
       current_user { create(:user) }
 
-      it "is forbidden" do
+      it "is refused" do
         get invitation_link_user_path(invited_user), headers: turbo_stream_headers
 
-        expect(response).to have_http_status(:forbidden)
+        expect(response).to have_http_status(:not_found)
       end
     end
   end
@@ -116,23 +115,14 @@ RSpec.describe "Users invitation link", :skip_csrf, type: :rails_request do
       end.not_to change { invited_user.reload.passwords.count }
     end
 
-    context "with create_user permission" do
+    context "with create_user permission but without admin" do
       current_user { create(:user, global_permissions: %i[create_user view_all_principals]) }
 
-      it "is allowed" do
+      it "is forbidden" do
         post generate_invitation_link_user_path(invited_user), headers: turbo_stream_headers
 
-        expect(response).to have_http_status(:ok)
-        expect(Token::Invitation.find_by(user: invited_user)).to be_present
-      end
-
-      it "refuses to generate a link for an admin" do
-        invited_admin = create(:admin, status: User.statuses[:invited])
-
-        post generate_invitation_link_user_path(invited_admin), headers: turbo_stream_headers
-
         expect(response).to have_http_status(:forbidden)
-        expect(Token::Invitation.find_by(user: invited_admin)).to be_nil
+        expect(Token::Invitation.find_by(user: invited_user)).to be_nil
       end
     end
 
@@ -150,10 +140,10 @@ RSpec.describe "Users invitation link", :skip_csrf, type: :rails_request do
     context "without create_user permission" do
       current_user { create(:user) }
 
-      it "is forbidden" do
+      it "is refused" do
         post generate_invitation_link_user_path(invited_user), headers: turbo_stream_headers
 
-        expect(response).to have_http_status(:forbidden)
+        expect(response).to have_http_status(:not_found)
         expect(Token::Invitation.find_by(user: invited_user)).to be_nil
       end
     end

@@ -35,7 +35,7 @@ class UsersController < ApplicationController
 
   layout "admin"
 
-  before_action :authorize_global, except: %i[show deletion_info destroy]
+  before_action :authorize_global, except: %i[show deletion_info destroy invitation_link generate_invitation_link]
   before_action :prevent_response_caching, only: :edit
 
   # rubocop:disable Rails/LexicallyScopedActionFilter
@@ -64,11 +64,11 @@ class UsersController < ApplicationController
   # should also contain destroy but post data can not be redirected
   before_action :require_login, only: [:deletion_info]
   before_action :authorize_for_user, only: [:destroy]
-  before_action :authorize_admin_management, only: %i[invitation_link generate_invitation_link]
+  before_action :require_admin, only: %i[invitation_link generate_invitation_link]
   before_action :check_if_deletion_allowed, only: %i[deletion_info
                                                      destroy]
   no_authorization_required! :show
-  authorization_checked! :destroy, :deletion_info
+  authorization_checked! :destroy, :deletion_info, :invitation_link, :generate_invitation_link
 
   # Password confirmation helpers and actions
   include PasswordConfirmation
@@ -297,7 +297,7 @@ class UsersController < ApplicationController
   end
 
   def create_invite_link
-    Token::InviteLink.create!(user: current_user)
+    InviteLinks::CreateService.new(user: current_user).call
 
     respond_with_dialog InviteLinks::DialogComponent.new(link: active_invite_link)
   end
@@ -404,12 +404,6 @@ class UsersController < ApplicationController
 
   def active_invite_link
     Token::InviteLink.active.global.order(created_at: :desc).first
-  end
-
-  def authorize_admin_management
-    return unless @user.admin? && !current_user.admin?
-
-    render_403 message: I18n.t("user.error_admin_change_on_non_admin")
   end
 
   def check_if_deletion_allowed
