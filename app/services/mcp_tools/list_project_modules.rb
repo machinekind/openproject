@@ -52,10 +52,6 @@ module McpTools
       project = find_project(project_id)
       return Failure("The given project could not be found.") if project.nil?
 
-      unless current_user.allowed_in_project?(:select_project_modules, project)
-        return Failure("You are not allowed to see the modules of this project.")
-      end
-
       Success(modules_payload(project))
     end
   end

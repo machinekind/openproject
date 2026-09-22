@@ -158,11 +158,10 @@ RSpec.describe McpTools::ListProjectModules do
     context "when the user is a member without the permission" do
       let(:user) { create(:user, member_with_permissions: { project => %i[view_project] }) }
 
-      it "responds with an error and no module list" do
+      it "lists the modules, as the project menu shows them" do
         mcp_request
 
-        expect(result_item.fetch("error")).to eq("You are not allowed to see the modules of this project.")
-        expect(result_item).not_to have_key("modules")
+        expect(module_entry("board_view")).to include("enabled" => true)
       end
     end
 

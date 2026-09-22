@@ -94,6 +94,18 @@ RSpec.describe McpTools::UpdateProjectModules do
         end
       end
 
+      context "when the module is gated by an enterprise feature" do
+        let(:call_args) { { project_id: project.id, enable: ["team_planner_view"] } }
+
+        it "enables it as the settings page does and reports the feature as unavailable" do
+          expect { mcp_request }.to change(EnabledModule, :count).by(1)
+
+          expect(project.reload.enabled_module_names).to include("team_planner_view")
+          expect(module_entry("team_planner_view"))
+            .to include("enabled" => true, "enterpriseFeatureAvailable" => false)
+        end
+      end
+
       context "when a dependency is missing" do
         let(:enabled_module_names) { %w[news] }
 
@@ -123,6 +135,8 @@ RSpec.describe McpTools::UpdateProjectModules do
 
         it "succeeds and changes nothing" do
           expect { mcp_request }.not_to change(EnabledModule, :count)
+
+          expect(module_entry("board_view")).to include("enabled" => false)
         end
       end
 

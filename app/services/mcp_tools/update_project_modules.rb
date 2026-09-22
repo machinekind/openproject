@@ -48,13 +48,17 @@ module McpTools
         enable: {
           type: "array",
           items: { type: "string" },
+          maxItems: 100,
           description: "Names of modules to enable, e.g. 'board_view'. Use list_project_modules to obtain valid " \
                        "names. Modules that are already enabled are left untouched. Dependencies are not enabled " \
-                       "automatically; enable them in the same call."
+                       "automatically; enable them in the same call. A module gated by an enterprise feature can " \
+                       "be enabled without a token, as on the settings page; the payload reports whether the " \
+                       "feature itself is available."
         },
         disable: {
           type: "array",
           items: { type: "string" },
+          maxItems: 100,
           description: "Names of modules to disable. Modules that are not enabled are ignored. Disabling a module " \
                        "that another enabled module depends on is rejected."
         }
@@ -110,17 +114,28 @@ module McpTools
     end
 
     def apply(project, to_enable, to_disable)
-      names = (project.enabled_module_names | to_enable) - to_disable
+      result = nil
 
-      result = Projects::EnabledModulesService
-                 .new(user: current_user, model: project)
-                 .call(enabled_modules: names)
+      OpenProject::Mutex.with_advisory_lock_transaction(project) do
+        project.reload
+        result = change_modules(project, to_enable, to_disable)
+
+        raise ActiveRecord::Rollback if result.failure?
+      end
 
       if result.success?
         Success(modules_payload(result.result))
       else
         Failure(result.message)
       end
+    end
+
+    def change_modules(project, to_enable, to_disable)
+      names = (project.enabled_module_names | to_enable) - to_disable
+
+      Projects::EnabledModulesService
+        .new(user: current_user, model: project)
+        .call(enabled_modules: names)
     end
   end
 end
