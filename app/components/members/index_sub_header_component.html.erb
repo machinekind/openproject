@@ -18,6 +18,17 @@
         ) do
           Member.model_name.human
         end
+
+        subheader.with_action_button(
+          tag: :a,
+          scheme: :secondary,
+          leading_icon: :link,
+          label: t("invite_links.button"),
+          href: invite_link_project_members_path(@project),
+          data: { controller: "async-dialog", test_selector: "invite-link-button" }
+        ) do
+          t("invite_links.button")
+        end
       end
 
       subheader.with_bottom_pane_component do

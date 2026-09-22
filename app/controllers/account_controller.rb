@@ -46,6 +46,8 @@ class AccountController < ApplicationController
                              :password_recovery,
                              :set_recovered_password,
                              :register,
+                             :join,
+                             :join_project,
                              :activate,
                              :consent,
                              :confirm_consent,
@@ -189,6 +191,16 @@ class AccountController < ApplicationController
     end
   end
 
+  # Multi-use self-registration link, see Token::InviteLink
+  def join
+    with_project_invite_link { |token| @invite_link = token }
+  end
+
+  # Confirmation of +join+ for an already signed in user
+  def join_project
+    with_project_invite_link { |token| add_invite_link_membership(token) }
+  end
+
   # Token based account activation
   def activate
     token = ::Token::Invitation.find_by_plaintext_value(params[:token])
@@ -235,6 +247,48 @@ class AccountController < ApplicationController
   end
 
   private
+
+  def invalid_invite_link_and_redirect
+    flash[:error] = I18n.t("account.invite_link.invalid")
+    redirect_to signin_path
+  end
+
+  def remember_invite_link_and_register(token)
+    session[:invite_link_token] = token.value
+    redirect_to account_register_path
+  end
+
+  def already_signed_in_and_redirect
+    flash[:notice] = I18n.t("account.invite_link.already_signed_in")
+    redirect_to home_url
+  end
+
+  def with_project_invite_link
+    token = ::Token::InviteLink.find_usable(params[:token])
+
+    if token.nil?
+      invalid_invite_link_and_redirect
+    elsif !User.current.logged?
+      remember_invite_link_and_register(token)
+    elsif token.global?
+      already_signed_in_and_redirect
+    else
+      yield token
+    end
+  end
+
+  def add_invite_link_membership(token)
+    call = ::Members::CreateFromInviteLinkService.new(invite_link: token, user: User.current).call
+    return joined_project_and_redirect(token.project) if call.success?
+
+    flash[:error] = call.message
+    redirect_to home_url
+  end
+
+  def joined_project_and_redirect(project)
+    flash[:notice] = I18n.t("account.invite_link.joined_project", project: project.name)
+    redirect_to project_path(project)
+  end
 
   def handle_expired_token(token)
     send_activation_email! token.user
@@ -315,13 +369,19 @@ class AccountController < ApplicationController
   end
 
   def allow_registration?
+    return true if registration_unlocked_by_token?
+
     allow = Setting::SelfRegistration.enabled? && Users::PasswordLogin.enabled?
 
-    invited = session[:invitation_token].present?
-    get = request.get? && allow
-    post = (request.post? || request.patch?) && (session[:auth_source_registration].present? || allow)
+    if request.post? || request.patch?
+      session[:auth_source_registration].present? || allow
+    else
+      request.get? && allow
+    end
+  end
 
-    invited || get || post
+  def registration_unlocked_by_token?
+    session[:invitation_token].present? || invite_link_from_session.present?
   end
 
   def allow_lost_password_recovery?

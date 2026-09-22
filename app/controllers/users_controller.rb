@@ -35,7 +35,7 @@ class UsersController < ApplicationController
 
   layout "admin"
 
-  before_action :authorize_global, except: %i[show deletion_info destroy]
+  before_action :authorize_global, except: %i[show deletion_info destroy invitation_link generate_invitation_link]
   before_action :prevent_response_caching, only: :edit
 
   # rubocop:disable Rails/LexicallyScopedActionFilter
@@ -57,15 +57,18 @@ class UsersController < ApplicationController
                                      change_status
                                      destroy
                                      deletion_info
-                                     resend_invitation]
+                                     resend_invitation
+                                     invitation_link
+                                     generate_invitation_link]
   # rubocop:enable Rails/LexicallyScopedActionFilter
   # should also contain destroy but post data can not be redirected
   before_action :require_login, only: [:deletion_info]
   before_action :authorize_for_user, only: [:destroy]
+  before_action :require_admin, only: %i[invitation_link generate_invitation_link]
   before_action :check_if_deletion_allowed, only: %i[deletion_info
                                                      destroy]
   no_authorization_required! :show
-  authorization_checked! :destroy, :deletion_info
+  authorization_checked! :destroy, :deletion_info, :invitation_link, :generate_invitation_link
 
   # Password confirmation helpers and actions
   include PasswordConfirmation
@@ -289,6 +292,30 @@ class UsersController < ApplicationController
     redirect_to helpers.allowed_management_user_profile_path(@user)
   end
 
+  def invite_link
+    respond_with_dialog InviteLinks::DialogComponent.new(link: active_invite_link)
+  end
+
+  def create_invite_link
+    InviteLinks::CreateService.new(user: current_user).call
+
+    respond_with_dialog InviteLinks::DialogComponent.new(link: active_invite_link)
+  end
+
+  def invitation_link
+    respond_with_dialog Users::InvitationLinkDialogComponent.new(user: @user)
+  end
+
+  def generate_invitation_link
+    unless @user.invited?
+      render_400 message: I18n.t("users.invitation_link.not_invited")
+      return
+    end
+
+    Token::Invitation.create!(user: @user)
+    respond_with_dialog Users::InvitationLinkDialogComponent.new(user: @user)
+  end
+
   def destroy
     # true if the user deletes him/herself
     self_delete = (@user == User.current)
@@ -373,6 +400,10 @@ class UsersController < ApplicationController
 
       false
     end
+  end
+
+  def active_invite_link
+    Token::InviteLink.active.global.order(created_at: :desc).first
   end
 
   def check_if_deletion_allowed

@@ -13,7 +13,8 @@ module OpenProject
         LostPassword,
         APIV3,
         Login,
-        Registration
+        Registration,
+        InviteLinkJoin
       ]
     end
 

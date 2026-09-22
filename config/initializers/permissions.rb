@@ -68,7 +68,8 @@ Rails.application.reloader.to_prepare do
 
       map.permission :create_user,
                      {
-                       users: %i[index show new create resend_invitation configure_view_modal],
+                       users: %i[index show new create resend_invitation invite_link create_invite_link
+                                 configure_view_modal],
                        "users/memberships": %i[create],
                        admin: %i[index]
                      },
@@ -208,7 +209,8 @@ Rails.application.reloader.to_prepare do
 
       map.permission :manage_members,
                      {
-                       members: %i[index new create update destroy destroy_by_principal autocomplete_for_member menu],
+                       members: %i[index new create update destroy destroy_by_principal autocomplete_for_member menu
+                                   invite_link create_invite_link],
                        "members/menus": %i[show]
                      },
                      permissible_on: :project,

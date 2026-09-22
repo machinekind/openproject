@@ -30,9 +30,11 @@
 
 class MembersController < ApplicationController
   include MemberHelper
+  include OpTurbo::ComponentStream
 
   before_action :find_project_by_project_id
-  before_action :find_member, except: %i[index create autocomplete_for_member destroy_by_principal]
+  before_action :find_member, except: %i[index create autocomplete_for_member destroy_by_principal
+                                         invite_link create_invite_link]
   before_action :authorize
 
   def index
@@ -100,6 +102,20 @@ class MembersController < ApplicationController
     redirect_to project_members_path(project_id: @project), status: :see_other
   end
 
+  def invite_link
+    respond_with_dialog invite_link_dialog
+  end
+
+  def create_invite_link
+    call = InviteLinks::CreateService.new(user: current_user, project: @project).call(role_id: params[:role_id])
+
+    if call.success?
+      respond_with_dialog invite_link_dialog
+    else
+      respond_with_dialog invite_link_dialog(error: call.message), status: :unprocessable_entity
+    end
+  end
+
   def autocomplete_for_member
     type = params[:type]
     @principals = possible_members(params[:q], 100, type:)
@@ -119,6 +135,12 @@ class MembersController < ApplicationController
 
   def find_member
     @member = @project.memberships.visible.find(params[:id])
+  end
+
+  def invite_link_dialog(error: nil)
+    link = Token::InviteLink.active.for_project(@project).order(created_at: :desc).first
+
+    InviteLinks::DialogComponent.new(link:, project: @project, error:)
   end
 
   def authorize_for?(controller, action)

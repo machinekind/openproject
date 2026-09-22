@@ -87,6 +87,7 @@ These tools exist only in this fork; upstream OpenProject's MCP server cannot do
 | Enable a type | `update_project_types` | `{"project_id": 8, "add": [5], "remove": [3]}`. Ids from `list_types`. A type still used by work packages cannot be removed. |
 | Which modules are on | `list_project_modules` | `{"project_id": "wojtek"}`. Any member of the project may call it. Returns every module with its `name`, `enabled`, `dependencies` and enterprise state. |
 | Turn a module on or off | `update_project_modules` | `{"project_id": "wojtek", "enable": ["board_view"]}`. New projects get the instance's default modules, which normally include `board_view`; enable it only when `create_board` answers "The Boards module is not enabled in this project." Dependencies are never enabled implicitly — pass them in the same call. A module gated by an enterprise feature can be enabled without a token, as on the settings page; `enterpriseFeatureAvailable` in the payload says whether the feature itself works. |
+| Invite people without accounts | `create_project_invite_link` | `{"project_id": 8, "role_id": 4}`. Returns a join URL that anyone can use to register and join the project with that role. Multi-use, expires after 24 hours, and replaces the project's previous link. Needs `manage_members` on the project. |
 
 Order: user, then group with that user, then membership of the group in the project, then work packages. Adding a group to a project gives every member of the group the role, including people added later.
 

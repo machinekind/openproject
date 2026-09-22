@@ -131,7 +131,28 @@ module Accounts::Registration
   def respond_for_registered_user(user)
     return unless consent_given_for_registration?(user)
 
-    respond_to_registration_result(::Users::RegisterUserService.new(user).call, user)
+    invite_link = invite_link_from_session
+    call = ::Users::RegisterUserService.new(user, invite_link:).call
+    session.delete(:invite_link_token) if call.success?
+
+    respond_to_registration_result(call, user)
+  end
+
+  def invite_link_from_session
+    return @invite_link_from_session if defined?(@invite_link_from_session)
+
+    @invite_link_from_session = resolve_invite_link_from_session
+  end
+
+  def resolve_invite_link_from_session
+    value = session[:invite_link_token]
+    return if value.blank?
+
+    token = ::Token::InviteLink.find_usable(value)
+    return token if token
+
+    session.delete(:invite_link_token)
+    nil
   end
 
   def respond_to_registration_result(call, user)

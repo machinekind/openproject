@@ -1,0 +1,81 @@
+<%#-- copyright
+OpenProject is an open source project management software.
+Copyright (C) the OpenProject GmbH
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License version 3.
+
+OpenProject is a fork of ChiliProject, which is a fork of Redmine. The copyright follows:
+Copyright (C) 2006-2013 Jean-Philippe Lang
+Copyright (C) 2010-2013 the ChiliProject Team
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+See COPYRIGHT and LICENSE files for more details.
+
+++#%>
+<%=
+  render(
+    Primer::Alpha::Dialog.new(
+      id: DIALOG_ID,
+      title: t("users.invitation_link.title"),
+      size: :medium_portrait,
+      data: { keep_open_on_submit: true }
+    )
+  ) do |dialog|
+    dialog.with_body do
+      form_with(
+        id: FORM_ID,
+        url: generate_invitation_link_user_path(@user),
+        method: :post,
+        data: { turbo: true }
+      ) do
+        flex_layout do |flex|
+          if link_available?
+            flex.with_row(mb: 3) do
+              render(Primer::Beta::Text.new) { t("users.invitation_link.description", name: @user.name) }
+            end
+            flex.with_row(mb: 2) do
+              render(OpPrimer::CopyToClipboardComponent.new(invitation_url, test_selector: "invitation-link"))
+            end
+            flex.with_row do
+              render(Primer::Beta::Text.new(color: :muted, font_size: :small)) do
+                t("users.invitation_link.expires_at", date: expires_at)
+              end
+            end
+          else
+            flex.with_row do
+              render(Primer::Beta::Text.new) { t("users.invitation_link.no_valid_link") }
+            end
+          end
+        end
+      end
+    end
+
+    dialog.with_footer(show_divider: true) do
+      concat(render(Primer::Beta::Button.new(data: { close_dialog_id: DIALOG_ID })) { t(:button_close) })
+      concat(
+        render(
+          Primer::Beta::Button.new(
+            scheme: link_available? ? :default : :primary,
+            form: FORM_ID,
+            type: :submit,
+            test_selector: "generate-invitation-link"
+          )
+        ) { t("users.invitation_link.generate") }
+      )
+    end
+  end
+%>
