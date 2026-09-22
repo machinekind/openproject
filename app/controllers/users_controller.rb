@@ -57,11 +57,14 @@ class UsersController < ApplicationController
                                      change_status
                                      destroy
                                      deletion_info
-                                     resend_invitation]
+                                     resend_invitation
+                                     invitation_link
+                                     generate_invitation_link]
   # rubocop:enable Rails/LexicallyScopedActionFilter
   # should also contain destroy but post data can not be redirected
   before_action :require_login, only: [:deletion_info]
   before_action :authorize_for_user, only: [:destroy]
+  before_action :authorize_admin_management, only: %i[invitation_link generate_invitation_link]
   before_action :check_if_deletion_allowed, only: %i[deletion_info
                                                      destroy]
   no_authorization_required! :show
@@ -289,6 +292,20 @@ class UsersController < ApplicationController
     redirect_to helpers.allowed_management_user_profile_path(@user)
   end
 
+  def invitation_link
+    respond_with_dialog Users::InvitationLinkDialogComponent.new(user: @user)
+  end
+
+  def generate_invitation_link
+    unless @user.invited?
+      render_400 message: I18n.t("users.invitation_link.not_invited")
+      return
+    end
+
+    Token::Invitation.create!(user: @user)
+    respond_with_dialog Users::InvitationLinkDialogComponent.new(user: @user)
+  end
+
   def destroy
     # true if the user deletes him/herself
     self_delete = (@user == User.current)
@@ -373,6 +390,12 @@ class UsersController < ApplicationController
 
       false
     end
+  end
+
+  def authorize_admin_management
+    return unless @user.admin? && !current_user.admin?
+
+    render_403 message: I18n.t("user.error_admin_change_on_non_admin")
   end
 
   def check_if_deletion_allowed

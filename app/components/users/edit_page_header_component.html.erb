@@ -70,6 +70,22 @@ See COPYRIGHT and LICENSE files for more details.
         button.with_leading_visual_icon(icon: :mail)
         t(:label_send_invitation)
       end
+
+      if @user.invited?
+        header.with_action_button(
+          tag: :a,
+          mobile_icon: :link,
+          mobile_label: t("users.invitation_link.button"),
+          size: :medium,
+          href: invitation_link_user_path(@user),
+          data: { controller: "async-dialog", test_selector: "invitation-link-button" },
+          aria: { label: t("users.invitation_link.button") },
+          title: t("users.invitation_link.tooltip")
+        ) do |button|
+          button.with_leading_visual_icon(icon: :link)
+          t("users.invitation_link.button")
+        end
+      end
     end
 
     if @current_user.admin?

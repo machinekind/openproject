@@ -68,7 +68,8 @@ Rails.application.reloader.to_prepare do
 
       map.permission :create_user,
                      {
-                       users: %i[index show new create resend_invitation configure_view_modal],
+                       users: %i[index show new create resend_invitation invitation_link generate_invitation_link
+                                 configure_view_modal],
                        "users/memberships": %i[create],
                        admin: %i[index]
                      },

@@ -1214,6 +1214,8 @@ Rails.application.routes.draw do
       get "/change_status/:change_action" => "users#change_status_info", as: "change_status_info"
       post :change_status
       post :resend_invitation
+      get :invitation_link
+      post :generate_invitation_link
       patch :update_reminders
       patch :update_workdays
       patch :update_email_alerts

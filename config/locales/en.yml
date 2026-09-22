@@ -6999,6 +6999,15 @@ en:
       no_results_title_text: This user is currently not a member in any group.
       summary_html: Member of %{names}.
       summary_with_more_html: Member of %{names} and %{count_link}.
+    invitation_link:
+      button: "Invitation link"
+      description: "Share this link with %{name}. Opening it lets them complete their registration without an invitation email."
+      expires_at: "This link expires on %{date}."
+      generate: "Generate new link"
+      no_valid_link: "There is no valid invitation link for this user yet. Generate one to share it."
+      not_invited: "An invitation link can only be created for invited users."
+      title: "Invitation link"
+      tooltip: "Show the invitation link so you can share it with the user yourself, without sending an email."
     invite_user_modal:
       invite: "Invite"
       message:
