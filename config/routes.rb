@@ -116,6 +116,7 @@ Rails.application.routes.draw do
     post "/account/set_recovered_password", action: "set_recovered_password"
     match "/account/register", action: "register", via: %i[get post patch]
     get "/account/join/:token", action: "join", as: "account_join"
+    post "/account/join/:token", action: "join_project", as: "account_join_project"
     get "/account/activate", action: "activate"
 
     match "/login", action: "login", as: "signin", via: %i[get post]

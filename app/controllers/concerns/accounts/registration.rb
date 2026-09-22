@@ -148,8 +148,8 @@ module Accounts::Registration
     value = session[:invite_link_token]
     return if value.blank?
 
-    token = ::Token::InviteLink.find_by_plaintext_value(value)
-    return token if token && !token.expired?
+    token = ::Token::InviteLink.find_usable(value)
+    return token if token
 
     session.delete(:invite_link_token)
     nil

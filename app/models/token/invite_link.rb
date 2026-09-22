@@ -59,22 +59,34 @@ module Token
 
         where("data->>'project_id' = ?", project_id.to_s)
       end
+
+      def find_usable(value)
+        token = find_by_plaintext_value(value)
+
+        token if token&.usable?
+      end
     end
 
     def project
       return @project if defined?(@project)
 
-      @project = Project.find_by(id: project_id)
+      @project = Project.active.find_by(id: project_id)
     end
 
     def role
       return @role if defined?(@role)
 
-      @role = ProjectRole.find_by(id: role_id)
+      @role = ProjectRole.givable.find_by(id: role_id)
     end
 
     def global?
       project_id.blank?
+    end
+
+    def usable?
+      return false if expired?
+
+      global? || (project.present? && role.present?)
     end
 
     protected

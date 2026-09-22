@@ -95,15 +95,29 @@ RSpec.describe Users::RegisterUserService, with_ee: %i[sso_auth_providers] do
       end
     end
 
-    it "activates the user even when the membership cannot be created" do
-      allow(Members::CreateFromInviteLinkService).to receive(:new).and_raise("boom")
+    it "fails the registration when the membership cannot be created" do
+      membership_call = ServiceResult.failure(message: "Nope")
+      allow(Members::CreateFromInviteLinkService)
+        .to receive(:new).and_return(instance_double(Members::CreateFromInviteLinkService, call: membership_call))
       user = build(:user, status: Principal.statuses[:registered])
 
       call = described_class.new(user, invite_link:).call
 
-      expect(call).to be_success
-      expect(user.reload).to be_active
-      expect(user.memberships).to be_empty
+      expect(call).to be_failure
+      expect(call.message).to include "Nope"
+      expect(User.find_by(login: user.login)).to be_nil
+    end
+
+    it "fails the registration when the project of the link is archived" do
+      archived = create(:project, active: false)
+      link = create(:invite_link_token, user: creator, project: archived, role:)
+      user = build(:user, status: Principal.statuses[:registered])
+
+      call = described_class.new(user, invite_link: link).call
+
+      expect(call).to be_failure
+      expect(call.message).to include I18n.t("account.invite_link.project_unavailable")
+      expect(User.find_by(login: user.login)).to be_nil
     end
 
     it "does not apply without an invite link",

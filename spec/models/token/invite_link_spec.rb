@@ -76,6 +76,62 @@ RSpec.describe Token::InviteLink do
     end
   end
 
+  describe "#usable?" do
+    it "is usable when global and not expired" do
+      expect(described_class.create!(user: creator)).to be_usable
+    end
+
+    it "is not usable once expired" do
+      token = described_class.create!(user: creator)
+      token.update_column(:expires_on, 1.minute.ago)
+
+      expect(token.reload).not_to be_usable
+    end
+
+    it "is not usable when the project is archived" do
+      archived = create(:project, active: false)
+      token = described_class.create!(user: creator, project_id: archived.id, role_id: role.id)
+
+      expect(token).not_to be_usable
+      expect(token.project).to be_nil
+    end
+
+    it "is not usable when the project is gone" do
+      doomed = create(:project)
+      token = described_class.create!(user: creator, project_id: doomed.id, role_id: role.id)
+      doomed.destroy
+
+      expect(token.reload).not_to be_usable
+    end
+
+    it "is not usable when the role is no longer givable" do
+      builtin = create(:non_member)
+      token = described_class.create!(user: creator, project_id: project.id, role_id: builtin.id)
+
+      expect(token).not_to be_usable
+      expect(token.role).to be_nil
+    end
+  end
+
+  describe ".find_usable" do
+    it "finds a usable token by its plaintext value" do
+      token = described_class.create!(user: creator)
+
+      expect(described_class.find_usable(token.value)).to eq token
+    end
+
+    it "returns nil for an unusable token" do
+      archived = create(:project, active: false)
+      token = described_class.create!(user: creator, project_id: archived.id, role_id: role.id)
+
+      expect(described_class.find_usable(token.value)).to be_nil
+    end
+
+    it "returns nil for an unknown value" do
+      expect(described_class.find_usable("join-nope")).to be_nil
+    end
+  end
+
   describe ".global" do
     it "only returns links without a project" do
       global = described_class.create!(user: creator)

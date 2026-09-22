@@ -38,7 +38,8 @@ module Members
     end
 
     def call
-      return ServiceResult.success(result: nil) if project.nil? || role.nil?
+      return ServiceResult.success(result: nil) if invite_link.global?
+      return project_unavailable if project.nil? || role.nil?
 
       existing_member ? add_role_to_existing_member : create_member
     end
@@ -47,6 +48,10 @@ module Members
 
     def project = invite_link.project
     def role = invite_link.role
+
+    def project_unavailable
+      ServiceResult.failure(message: I18n.t("account.invite_link.project_unavailable"))
+    end
 
     def existing_member
       return @existing_member if defined?(@existing_member)
@@ -58,13 +63,13 @@ module Members
       return ServiceResult.success(result: existing_member) if existing_member.role_ids.include?(role.id)
 
       Members::UpdateService
-        .new(user: User.system, model: existing_member, contract_class: EmptyContract)
+        .new(user: User.system, model: existing_member)
         .call(role_ids: existing_member.role_ids + [role.id])
     end
 
     def create_member
       Members::CreateService
-        .new(user: User.system, contract_class: EmptyContract)
+        .new(user: User.system)
         .call(roles: [role], project:, principal: user)
     end
   end

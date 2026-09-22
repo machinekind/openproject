@@ -47,6 +47,7 @@ class AccountController < ApplicationController
                              :set_recovered_password,
                              :register,
                              :join,
+                             :join_project,
                              :activate,
                              :consent,
                              :confirm_consent,
@@ -192,15 +193,12 @@ class AccountController < ApplicationController
 
   # Multi-use self-registration link, see Token::InviteLink
   def join
-    token = ::Token::InviteLink.find_by_plaintext_value(params[:token])
+    with_project_invite_link { |token| @invite_link = token }
+  end
 
-    if token.nil? || token.expired?
-      invalid_invite_link_and_redirect
-    elsif User.current.logged?
-      join_as_current_user(token)
-    else
-      remember_invite_link_and_register(token)
-    end
+  # Confirmation of +join+ for an already signed in user
+  def join_project
+    with_project_invite_link { |token| add_invite_link_membership(token) }
   end
 
   # Token based account activation
@@ -260,25 +258,36 @@ class AccountController < ApplicationController
     redirect_to account_register_path
   end
 
-  def join_as_current_user(token)
-    if token.global?
-      flash[:notice] = I18n.t("account.invite_link.already_signed_in")
-      return redirect_to home_url
+  def already_signed_in_and_redirect
+    flash[:notice] = I18n.t("account.invite_link.already_signed_in")
+    redirect_to home_url
+  end
+
+  def with_project_invite_link
+    token = ::Token::InviteLink.find_usable(params[:token])
+
+    if token.nil?
+      invalid_invite_link_and_redirect
+    elsif !User.current.logged?
+      remember_invite_link_and_register(token)
+    elsif token.global?
+      already_signed_in_and_redirect
+    else
+      yield token
     end
-
-    add_invite_link_membership(token)
-
-    redirect_to project_path(token.project)
   end
 
   def add_invite_link_membership(token)
     call = ::Members::CreateFromInviteLinkService.new(invite_link: token, user: User.current).call
+    return joined_project_and_redirect(token.project) if call.success?
 
-    if call.success?
-      flash[:notice] = I18n.t("account.invite_link.joined_project", project: token.project.name)
-    else
-      flash[:error] = call.message
-    end
+    flash[:error] = call.message
+    redirect_to home_url
+  end
+
+  def joined_project_and_redirect(project)
+    flash[:notice] = I18n.t("account.invite_link.joined_project", project: project.name)
+    redirect_to project_path(project)
   end
 
   def handle_expired_token(token)
