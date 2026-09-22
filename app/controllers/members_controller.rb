@@ -107,16 +107,13 @@ class MembersController < ApplicationController
   end
 
   def create_invite_link
-    role = ProjectRole.givable.find_by(id: params[:role_id])
+    call = InviteLinks::CreateService.new(user: current_user, project: @project).call(role_id: params[:role_id])
 
-    if role.nil?
-      render_400 message: I18n.t("invite_links.error_invalid_role")
-      return
+    if call.success?
+      respond_with_dialog invite_link_dialog
+    else
+      respond_with_dialog invite_link_dialog(error: call.message), status: :unprocessable_entity
     end
-
-    Token::InviteLink.create!(user: current_user, project_id: @project.id, role_id: role.id)
-
-    respond_with_dialog invite_link_dialog
   end
 
   def autocomplete_for_member
@@ -140,10 +137,10 @@ class MembersController < ApplicationController
     @member = @project.memberships.visible.find(params[:id])
   end
 
-  def invite_link_dialog
+  def invite_link_dialog(error: nil)
     link = Token::InviteLink.active.for_project(@project).order(created_at: :desc).first
 
-    InviteLinks::DialogComponent.new(link:, project: @project)
+    InviteLinks::DialogComponent.new(link:, project: @project, error:)
   end
 
   def authorize_for?(controller, action)

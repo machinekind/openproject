@@ -116,7 +116,8 @@ RSpec.describe "Project invite link", :skip_csrf, type: :rails_request do
              headers: turbo_stream_headers
       end.not_to change(Token::InviteLink, :count)
 
-      expect(response).to have_http_status(:bad_request)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).to include(I18n.t("invite_links.error_invalid_role"))
     end
 
     it "rejects a missing role" do
@@ -124,7 +125,8 @@ RSpec.describe "Project invite link", :skip_csrf, type: :rails_request do
         post create_invite_link_project_members_path(project), headers: turbo_stream_headers
       end.not_to change(Token::InviteLink, :count)
 
-      expect(response).to have_http_status(:bad_request)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).to include(I18n.t("invite_links.error_invalid_role"))
     end
 
     context "without manage_members" do
@@ -137,6 +139,45 @@ RSpec.describe "Project invite link", :skip_csrf, type: :rails_request do
 
         expect(response).to have_http_status(:forbidden)
       end
+    end
+
+    context "without any membership in the project" do
+      current_user { create(:user) }
+
+      it "is not allowed" do
+        expect do
+          post create_invite_link_project_members_path(project),
+               params: { role_id: role.id },
+               headers: turbo_stream_headers
+        end.not_to change(Token::InviteLink, :count)
+
+        expect(response).to have_http_status(:not_found).or have_http_status(:forbidden)
+      end
+    end
+
+    context "with manage_members in another project" do
+      shared_let(:other_project) { create(:project) }
+
+      it "cannot mint a link for the foreign project" do
+        expect do
+          post create_invite_link_project_members_path(other_project),
+               params: { role_id: role.id },
+               headers: turbo_stream_headers
+        end.not_to change(Token::InviteLink, :count)
+
+        expect(response).to have_http_status(:not_found).or have_http_status(:forbidden)
+      end
+    end
+  end
+
+  describe "the role select" do
+    it "offers only givable roles" do
+      builtin = create(:non_member)
+
+      get invite_link_project_members_path(project), headers: turbo_stream_headers
+
+      expect(response.body).to include(role.name)
+      expect(response.body).not_to include(%(value="#{builtin.id}"))
     end
   end
 end

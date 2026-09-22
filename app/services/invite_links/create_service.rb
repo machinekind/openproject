@@ -29,56 +29,47 @@
 #++
 
 module InviteLinks
-  class DialogComponent < ApplicationComponent
-    include OpPrimer::ComponentHelpers
-    include OpTurbo::Streamable
+  class CreateService
+    attr_reader :user, :project
 
-    DIALOG_ID = "invite-link-dialog"
-    FORM_ID = "generate-invite-link-form"
-
-    def initialize(link:, project: nil, error: nil, **options)
-      super
-      @link = link
+    def initialize(user:, project: nil)
+      @user = user
       @project = project
-      @error = error
     end
 
-    attr_reader :error
+    def call(role_id: nil)
+      return unauthorized unless allowed?
 
-    def link_available?
-      @link.present?
+      role = givable_role(role_id)
+      return invalid_role if project && role.nil?
+
+      token = ::Token::InviteLink.create!(user:, project_id: project&.id, role_id: role&.id)
+
+      ServiceResult.success(result: token)
     end
 
-    def invite_url
-      account_join_url(token: @link.value)
-    end
+    private
 
-    def expires_at
-      helpers.format_time(@link.expires_on)
-    end
-
-    def form_url
-      if @project
-        create_invite_link_project_members_path(@project)
+    def allowed?
+      if project
+        user.allowed_in_project?(:manage_members, project)
       else
-        create_invite_link_users_path
+        user.allowed_globally?(:create_user)
       end
     end
 
-    def roles
-      @roles ||= ProjectRole.givable.to_a
+    def givable_role(role_id)
+      return if project.nil? || role_id.blank?
+
+      ProjectRole.givable.find_by(id: role_id)
     end
 
-    def selected_role_id
-      @link&.role_id || ProjectRole.in_new_project&.id || roles.first&.id
+    def invalid_role
+      ServiceResult.failure(message: I18n.t("invite_links.error_invalid_role"))
     end
 
-    def description_key
-      @project ? "invite_links.description_project" : "invite_links.description_global"
-    end
-
-    def empty_key
-      @project ? "invite_links.no_link_project" : "invite_links.no_link_global"
+    def unauthorized
+      ServiceResult.failure(message: I18n.t("invite_links.error_not_authorized"))
     end
   end
 end
