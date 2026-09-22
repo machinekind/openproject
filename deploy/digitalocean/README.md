@@ -50,35 +50,44 @@ branches are an upstream release tag plus the fork's commits, for example `stabl
 runs no tests, so run `bundle exec rspec spec/requests/mcp spec/models/enterprise_token_spec.rb` on the
 branch before building it.
 
-## First deployment
+## Operating it: `make`
 
-1. `brew install doctl && doctl auth init`. Upload an SSH key in the control panel and find its id with
-   `doctl compute ssh-key list`. Keep a second key offline and add it too; with one lost key your way in
-   is the DigitalOcean recovery console.
-2. `SSH_KEY_ID=<id> ./provision.sh`. It asks for confirmation, spends money, and prints each resource id as
-   it is created. It writes the secrets to `~/.config/openproject-do/.env`, outside the repository, mode
-   600. It refuses to run if that file exists. Do not run it with `bash -x`.
-3. Point a DNS A record at the printed IP **before** the first start. Caddy requests a certificate on start,
-   and repeated failures count against Let's Encrypt's rate limits.
-4. Edit `~/.config/openproject-do/.env`: `OPENPROJECT_HOST__NAME`, `OPENPROJECT_IMAGE`, the admin mail
-   address and the SMTP block. DigitalOcean blocks outbound ports 25, 465 and 587; the template uses 2525.
-5. Run the three commands the script printed: wait for `cloud-init status --wait`, `scp` the stack to
-   `/srv/openproject/`, then `./bootstrap-db.sh && ./deploy.sh`. The first start migrates an empty database
-   and takes several minutes. `deploy.sh` reports the container as healthy; open the site in a browser to
-   confirm DNS and the certificate.
-6. Secure the accounts, in this order:
-   1. Log in as `admin` with the password from `.env` and set a new one.
-   2. Create a personal administrator account with a login that is not guessable. Log in with it.
-   3. Lock the `admin` account. Its name is public knowledge, and anyone can block a known login for 30
-      minutes at a time by failing its password 20 times.
-   4. Remove `OPENPROJECT_SEED__ADMIN__USER__PASSWORD` from the server's `.env`. The seeder never resets
-      an existing admin, so this is safe.
-   5. Put `SECRET_KEY_BASE` in your password manager. Without it the encrypted columns are unreadable.
-7. Backups: configure a remote with `rclone config`, set `RCLONE_REMOTE` in `.env`, install the cron line
-   from the top of `backup.sh`, then run `./backup.sh` once by hand and check that a `db-*.dump` and an
-   `assets-*.tar.gz` exist and arrived at the remote. Attachments have no other off-server copy. A remote
-   outside DigitalOcean also protects against losing the whole account.
-8. Do one restore drill (below) before the team depends on the system.
+Everything is a `make` target in this directory. `make help` lists them. State (Droplet IP, database id, host
+name) is kept in `~/.config/openproject-do/state` and the secrets in `.env` next to it, both outside the
+repository.
+
+Targets are tagged **[agent]** or **[human]**. Agent targets never print a secret and spend no money, so an
+AI agent can run them; `.claude/skills/openproject-deploy` tells it how. Human targets spend money, prompt
+for a secret or print one, and refuse to run without a terminal.
+
+### First deployment
+
+| Step | Who | Command |
+|---|---|---|
+| Install and log in | human | `brew install doctl && doctl auth init`, upload an SSH key, keep a second one offline |
+| Check tools, logins, names | agent | `make preflight` |
+| Create Droplet, database, firewall | **human** | `make provision SSH_KEY_ID=<id>` |
+| Host name and admin mail | agent | `make configure HOST=<host> ADMIN_MAIL=<mail>`, then create the DNS A record it names |
+| Build and pin the image | agent | `make image TAG=<tag>` |
+| Wait for DNS | agent | `make dns-wait`. Caddy requests a certificate on start, and failures count against rate limits |
+| Start | agent | `make up`. The first start migrates an empty database and takes 5 to 10 minutes |
+| First login | **human** | `make admin-password`, log in as `admin`, set a new password |
+| Personal administrator | **human** | `make create-admin LOGIN=<not guessable> FIRST= LAST= MAIL=` |
+| Lock `admin`, drop the seed password | agent | `make harden`. Anyone can block a known login for 30 minutes by failing its password |
+| Nightly backup | agent | `make backup-install`, then `make backup-now` |
+| Team-lead role | agent | `make roles` |
+| Off-server backups | **human**, agent | `make backup-remote`, then `make backup-remote-set REMOTE=<remote>:`. Attachments have no other off-server copy |
+| Mail | agent, **human** | `make smtp-test SMTP_HOST=<host>`, `make smtp-configure ...`, `make deploy` |
+| Restore drill | agent | `make restore-drill` |
+
+Put `SECRET_KEY_BASE` from the local `.env` in your password manager. Without it the encrypted columns are
+unreadable. Do not run `provision.sh` with `bash -x`.
+
+### Day to day
+
+`make status`, `make verify`, `make logs SERVICE=web`, `make summary`. `make env-diff` names the keys that
+differ between the laptop's and the server's `.env` without showing values; `make push` never overwrites a
+differing server `.env`.
 
 ## MCP in production
 
@@ -97,11 +106,11 @@ branch before building it.
 
 ## Updating
 
-Build a new image, replace the `OPENPROJECT_IMAGE` line in the server's `.env`, run `./deploy.sh`. The
-seeder migrates before web and worker start; if the pull or the migration fails, the running site stays up.
-Rolling back is the previous line plus `./deploy.sh`, provided the newer migrations were backwards
-compatible. Otherwise restore the database to the point before the update. Unused images older than a
-week are removed.
+`make image TAG=<new tag>`, then `make deploy IMAGE=<the printed image>`, then `make verify`. The seeder
+migrates before web and worker start; if the pull or the migration fails, the running site stays up. Rolling
+back is `make deploy IMAGE=<previous image>`, provided the newer migrations were backwards compatible.
+Otherwise restore the database to the point before the update. `make status` shows the running image.
+Unused images older than a week are removed.
 
 ## Restoring
 
@@ -109,7 +118,9 @@ week are removed.
 source `tag:openproject` to the new cluster, put its private URL into `.env` (database name `openproject`,
 `&pool=12` appended), run `./deploy.sh`.
 
-**Database, from a portable dump.** Restore into a fresh database, never over the live one:
+**Database, from a portable dump.** `make restore-drill` proves the newest dump restores, using a scratch
+database that it drops afterwards. For a real restore, do the same by hand into a fresh database, never over
+the live one:
 
 ```
 cd /srv/openproject
@@ -133,18 +144,15 @@ Droplet holds nothing that cannot be recreated except the attachments volume.
 
 ## Getting back in
 
-- **Login blocked after failed attempts.** The block lasts 30 minutes and a restart does not clear it:
-  ```
-  docker compose exec web bundle exec rails runner 'Rack::Attack::Allow2Ban.reset("login:#{ARGV[0].downcase}", maxretry: 20, findtime: 60, bantime: 1800)' <login>
-  ```
-- **Administrator password lost.** The policy wants 10 or more characters with lower, upper, digit and special:
-  ```
-  docker compose exec -e NEWPW='<new password>' web bundle exec rails runner 'u = User.find_by!(login: ARGV[0]); u.password = u.password_confirmation = ENV.fetch("NEWPW"); u.force_password_change = false; u.failed_login_count = 0; u.save!' <login>
-  ```
+- **Login blocked after failed attempts.** `make unban LOGIN=<login>`. The block lasts 30 minutes and a
+  restart does not clear it.
+- **Password lost, any account.** `make reset-password LOGIN=<login>`. The policy wants 10 or more characters
+  with lowercase, uppercase, digit and special character.
 - **SSH key lost.** Use the second key, or the recovery console in the DigitalOcean control panel. SSH
   accepts keys only; port 22 is opened before the host firewall is enabled, so first boot cannot cut it off.
 - **Database unreachable from a new Droplet.** The cluster accepts Droplets tagged `openproject`. Check the
   tag, or the cluster's trusted sources in the control panel.
+- **State file lost.** `make adopt` rebuilds it from the DigitalOcean account.
 
 ## Things that bite
 

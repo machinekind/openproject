@@ -1,0 +1,7 @@
+puts "version        #{OpenProject::VERSION}"
+puts "users          #{User.user.count} (#{User.user.active.count} active, #{User.active.admin.count} administrators)"
+puts "seeded admin   #{User.find_by(login: 'admin')&.status || 'absent'}"
+puts "projects       #{Project.count}"
+puts "work packages  #{WorkPackage.count}"
+puts "self-registration #{Setting.self_registration} (0 = disabled)"
+puts "mcp server     #{McpConfiguration.server_config.enabled? ? 'enabled' : 'disabled'}"
