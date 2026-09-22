@@ -93,7 +93,6 @@ RSpec.describe McpTools::SearchBoards do
 
     context "when filtering by project" do
       let(:call_args) { { project_id: other_project.id } }
-      let(:permissions) { %i[view_work_packages show_board_views] }
       let(:user) do
         create(:user, member_with_permissions: { project => permissions, other_project => permissions })
       end
@@ -183,11 +182,30 @@ RSpec.describe McpTools::SearchBoards do
         end
       end
 
+      def page(number)
+        header "Authorization", "Bearer #{access_token.plaintext_token}"
+        header "Content-Type", "application/json"
+        post "/mcp", request_body.merge(params: { name: "search_boards",
+                                                  arguments: { name: "Paged", page: number } }).to_json
+
+        JSON.parse(last_response.body).dig("result", "structuredContent", "items").pluck("id")
+      end
+
       it "returns only results up to the page size" do
         mcp_request
 
         expect(items.count).to eq(page_size)
         expect(parsed_results.dig("structuredContent", "total")).to eq(page_size + overspilling_boards)
+      end
+
+      it "splits the boards over the pages in id order" do
+        first_page = page(1)
+        second_page = page(2)
+
+        expect(first_page).to eq(first_page.sort)
+        expect(second_page).to eq(second_page.sort)
+        expect(first_page & second_page).to be_empty
+        expect(first_page.last).to be < second_page.first
       end
 
       context "when another page is requested" do

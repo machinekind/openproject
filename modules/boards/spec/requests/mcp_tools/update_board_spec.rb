@@ -78,7 +78,7 @@ RSpec.describe McpTools::UpdateBoard do
 
       expect(board.reload.options).to eq(options_before)
       expect(board.name).to eq(name_before)
-      expect(result_item.fetch("error")).to be_present
+      expect(result_item.fetch("error")).to include(expected_error)
     end
   end
 
@@ -173,20 +173,95 @@ RSpec.describe McpTools::UpdateBoard do
 
     context "when passing an unknown filter" do
       let(:call_args) { { id: board.id, filters: [{ bogus: { operator: "=", values: ["1"] } }] } }
+      let(:expected_error) { "filter does not exist" }
 
       it_behaves_like "a rejected update"
     end
 
     context "when passing an unsupported operator" do
       let(:call_args) { { id: board.id, filters: [{ type: { operator: "~", values: [type.id.to_s] } }] } }
+      let(:expected_error) { "Operator is not set to one of the allowed values" }
 
       it_behaves_like "a rejected update"
     end
 
     context "when passing a value that is not available in the project" do
       let(:call_args) { { id: board.id, filters: [{ type: { operator: "=", values: [create(:type).id.to_s] } }] } }
+      let(:expected_error) { "Type filter has invalid values." }
 
       it_behaves_like "a rejected update"
+    end
+
+    describe "malformed filters" do
+      let(:expected_error) { 'Each filter must be an object like { "type": { "operator": "=", "values": ["5"] } }.' }
+
+      context "when a filter names no attribute" do
+        let(:call_args) { { id: board.id, filters: [{}] } }
+
+        it_behaves_like "a rejected update"
+      end
+
+      context "when a filter holds an array instead of a condition" do
+        let(:call_args) { { id: board.id, filters: [{ status: ["5"] }] } }
+
+        it_behaves_like "a rejected update"
+      end
+
+      context "when a filter names two attributes" do
+        let(:call_args) do
+          { id: board.id,
+            filters: [{ status: { operator: "=", values: ["5"] }, type: { operator: "=", values: ["5"] } }] }
+        end
+
+        it_behaves_like "a rejected update"
+      end
+    end
+
+    describe "a filter on the attribute the board's lists are built on" do
+      let(:status) { create(:status) }
+      let(:version) { create(:version, project:) }
+      let(:board) do
+        create(:board_grid, project:, options: { "type" => "action", "attribute" => attribute })
+      end
+
+      context "with a status board" do
+        let(:attribute) { "status" }
+        let(:call_args) { { id: board.id, filters: [{ status: { operator: "=", values: [status.id.to_s] } }] } }
+        let(:expected_error) { "A status board filters its lists by status; add or remove lists instead." }
+
+        it_behaves_like "a rejected update"
+      end
+
+      context "with an assignee board" do
+        let(:attribute) { "assignee" }
+        let(:assignee) do
+          create(:user, member_with_permissions: { project => %i[view_work_packages work_package_assigned] })
+        end
+        let(:call_args) { { id: board.id, filters: [{ assignee: { operator: "=", values: [assignee.id.to_s] } }] } }
+        let(:expected_error) { "An assignee board filters its lists by assignee; add or remove lists instead." }
+
+        it_behaves_like "a rejected update"
+      end
+
+      context "with a version board" do
+        let(:attribute) { "version" }
+        let(:call_args) { { id: board.id, filters: [{ version: { operator: "=", values: [version.id.to_s] } }] } }
+        let(:expected_error) { "A version board filters its lists by version; add or remove lists instead." }
+
+        it_behaves_like "a rejected update"
+      end
+
+      context "with a basic board" do
+        let(:board) { create(:board_grid, project:) }
+        let(:call_args) { { id: board.id, filters: [{ status: { operator: "=", values: [status.id.to_s] } }] } }
+
+        it "applies the filter" do
+          mcp_request
+
+          expect(board.reload.options[:filters])
+            .to eq([{ status: { operator: "=", values: [status.id.to_s] } }])
+        end
+      end
     end
 
     context "with a board linked to a sprint" do

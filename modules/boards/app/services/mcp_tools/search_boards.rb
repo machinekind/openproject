@@ -61,7 +61,7 @@ module McpTools
     )
 
     def base_scope
-      Success(visible_boards)
+      Success(visible_boards.includes(:project, :widgets).order(:id))
     end
 
     def format_item(item)

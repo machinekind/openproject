@@ -80,11 +80,15 @@ RSpec.describe McpTools::CreateBoard do
         expect(created_board.name).to eq("My board")
         expect(created_board.project).to eq(project)
       end
+    end
 
+    shared_examples_for "a board with list queries" do
       it "creates public, manually sorted queries scoped to the project" do
         mcp_request
 
-        created_board.contained_queries.each do |query|
+        queries = created_board.contained_queries
+        expect(queries).to be_present
+        queries.each do |query|
           expect(query).to be_public
           expect(query.project).to eq(project)
           expect(query.sort_criteria).to eq([%w[manual_sorting asc], %w[id asc]])
@@ -94,6 +98,7 @@ RSpec.describe McpTools::CreateBoard do
 
     context "with a basic board" do
       it_behaves_like "a created board"
+      it_behaves_like "a board with list queries"
 
       it "creates a free board with a single unnamed list" do
         mcp_request
@@ -121,6 +126,7 @@ RSpec.describe McpTools::CreateBoard do
       let!(:default_status) { create(:default_status) }
 
       it_behaves_like "a created board"
+      it_behaves_like "a board with list queries"
 
       it "creates an action board with a list for the default status" do
         mcp_request
@@ -146,6 +152,7 @@ RSpec.describe McpTools::CreateBoard do
       let!(:closed_version) { create(:version, project:, status: "closed") }
 
       it_behaves_like "a created board"
+      it_behaves_like "a board with list queries"
 
       it "creates a list per open version" do
         mcp_request
@@ -168,7 +175,30 @@ RSpec.describe McpTools::CreateBoard do
           expect(created_board.board_type).to eq(:action)
           expect(created_board.board_type_attribute).to eq(type)
           expect(created_board.widgets).to be_empty
+          expect(created_board.contained_queries).to be_empty
         end
+      end
+    end
+
+    context "when the type is not one of the board types" do
+      let(:board_type) { "kanban" }
+
+      it_behaves_like "MCP tool execution error response"
+
+      it "reports the schema violation and creates nothing" do
+        expect { mcp_request }.not_to change(Boards::Grid, :count)
+
+        expect(parsed_results.dig("content", 0, "text")).to include("Invalid arguments")
+      end
+    end
+
+    context "when the project is given by its identifier" do
+      let(:call_args) { { project_id: project.identifier, name: "My board", type: "basic" } }
+
+      it "creates the board in the project" do
+        expect { mcp_request }.to change(Boards::Grid, :count).by(1)
+
+        expect(created_board.project).to eq(project)
       end
     end
 

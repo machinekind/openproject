@@ -115,6 +115,16 @@ RSpec.describe McpTools::CreateBoardList do
     [widget, Query.find(widget.options["queryId"])]
   end
 
+  def add_ui_made_list(grid, filter_key, condition)
+    grid.widgets.create!(identifier: "work_package_query",
+                         start_row: 1,
+                         end_row: 2,
+                         start_column: 1,
+                         end_column: 2,
+                         options: { "queryId" => create(:public_query, project:).id,
+                                    "filters" => [{ filter_key => condition }] })
+  end
+
   context "when the MCP server is enabled" do
     it_behaves_like "MCP text tool"
 
@@ -200,9 +210,27 @@ RSpec.describe McpTools::CreateBoardList do
         it_behaves_like "a rejected list"
       end
 
+      context "when the board already has a list the UI made for the status" do
+        let(:board) do
+          action_board(Boards::StatusBoardCreateService, "status").tap do |grid|
+            add_ui_made_list(grid, "status", { "operator" => "=", "values" => [status.id.to_s] })
+          end
+        end
+        let(:expected_error) { "The board already has a list for this value." }
+
+        it_behaves_like "a rejected list"
+      end
+
       context "when the status does not exist" do
         let(:call_args) { { board_id: board.id, value: 0 } }
         let(:expected_error) { "The given status could not be found." }
+
+        it_behaves_like "a rejected list"
+      end
+
+      context "when passing no value at all" do
+        let(:call_args) { { board_id: board.id } }
+        let(:expected_error) { "Pass the value the new list shall show: a status ID." }
 
         it_behaves_like "a rejected list"
       end
@@ -244,16 +272,6 @@ RSpec.describe McpTools::CreateBoardList do
       let(:expected_filter) { { assignee: { operator: "=", values: [assignee.id.to_s] } } }
       let(:expected_name) { assignee.name }
 
-      def add_ui_made_list(grid, condition)
-        grid.widgets.create!(identifier: "work_package_query",
-                             start_row: 1,
-                             end_row: 2,
-                             start_column: 1,
-                             end_column: 2,
-                             options: { "queryId" => create(:public_query, project:).id,
-                                        "filters" => [{ "assignee" => condition }] })
-      end
-
       it_behaves_like "a created list"
 
       it "stores the filter name the frontend reads in the widget while the query filters by assigned_to_id" do
@@ -282,7 +300,7 @@ RSpec.describe McpTools::CreateBoardList do
       context "when the board already has a list the UI made for the assignee" do
         let(:board) do
           action_board(Boards::AssigneeBoardCreateService, "assignee").tap do |grid|
-            add_ui_made_list(grid, { "operator" => "=", "values" => [assignee.id.to_s] })
+            add_ui_made_list(grid, "assignee", { "operator" => "=", "values" => [assignee.id.to_s] })
           end
         end
         let(:expected_error) { "The board already has a list for this value." }
@@ -301,7 +319,7 @@ RSpec.describe McpTools::CreateBoardList do
       context "when the board already has the unassigned list" do
         let(:board) do
           action_board(Boards::AssigneeBoardCreateService, "assignee").tap do |grid|
-            add_ui_made_list(grid, { "operator" => "!*", "values" => [] })
+            add_ui_made_list(grid, "assignee", { "operator" => "!*", "values" => [] })
           end
         end
         let(:call_args) { { board_id: board.id, value: nil } }
@@ -376,6 +394,24 @@ RSpec.describe McpTools::CreateBoardList do
       context "when the board already has a list for the version" do
         let(:call_args) { { board_id: board.id, value: existing_version.id } }
         let(:expected_error) { "The board already has a list for this value." }
+
+        it_behaves_like "a rejected list"
+      end
+
+      context "when the board already has a list the UI made for the version" do
+        let(:board) do
+          action_board(Boards::VersionBoardCreateService, "version").tap do |grid|
+            add_ui_made_list(grid, "version", { "operator" => "=", "values" => [version.id.to_s] })
+          end
+        end
+        let(:expected_error) { "The board already has a list for this value." }
+
+        it_behaves_like "a rejected list"
+      end
+
+      context "when passing no value at all" do
+        let(:call_args) { { board_id: board.id } }
+        let(:expected_error) { "Pass the value the new list shall show: a version ID." }
 
         it_behaves_like "a rejected list"
       end
@@ -495,6 +531,17 @@ RSpec.describe McpTools::CreateBoardList do
 
         it_behaves_like "a rejected list"
       end
+    end
+
+    context "when the board cannot be saved after the query was created" do
+      let(:expected_error) { "The board could not be saved." }
+
+      before do
+        failure = ServiceResult.failure(message: expected_error)
+        allow(Grids::UpdateService).to receive(:new).and_return(instance_double(Grids::UpdateService, call: failure))
+      end
+
+      it_behaves_like "a rejected list"
     end
 
     context "when the user may only view boards" do
