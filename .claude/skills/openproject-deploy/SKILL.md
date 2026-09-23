@@ -41,6 +41,9 @@ If the state file is missing, `make adopt` rebuilds it from the DigitalOcean acc
 3. `make verify`, then `make status`.
 4. Rolling back is `make deploy IMAGE=<previous image>`, provided the newer migrations were backwards
    compatible. `make status` shows the image that is running now; note it before you deploy.
+5. Every `make deploy` publishes a GitHub release named after the image tag, with notes listing the PRs
+   merged since the previous release. A rollback or an image not built on this machine gets no release
+   unless you run `make release TAG=<tag> SHA=<commit>`.
 
 If the pull fails with `unauthorized`, the GHCR package is private and the server is not logged in. The user
 either makes the package public or runs `make ghcr-login GH_USER=<login>`.

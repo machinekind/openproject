@@ -53,6 +53,7 @@ cmd_deploy() {
     info "image set to $IMAGE"
   fi
   remote "cd $REMOTE_DIR && ./deploy.sh" 2>&1 | redact
+  "$KIT_DIR/ops/infra.sh" release || info "release not published; run: make release"
 }
 
 cmd_status() {

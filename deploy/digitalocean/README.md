@@ -110,7 +110,9 @@ differing server `.env`.
 migrates before web and worker start; if the pull or the migration fails, the running site stays up. Rolling
 back is `make deploy IMAGE=<previous image>`, provided the newer migrations were backwards compatible.
 Otherwise restore the database to the point before the update. `make status` shows the running image.
-Unused images older than a week are removed.
+Unused images older than a week are removed. Every `make deploy` publishes a GitHub release named after the image
+tag, with notes listing the PRs merged since the previous release; a rollback or an image not built on this
+machine gets no release unless you run `make release TAG=... SHA=...`.
 
 ## Restoring
 

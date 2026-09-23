@@ -55,9 +55,44 @@ cmd_image() {
   [ -n "$digest" ] || die "could not read the image digest from run $run"
   owner="$(printf '%s' "${repo%%/*}" | tr '[:upper:]' '[:lower:]')"
   image="ghcr.io/${owner}/openproject:${tag}@${digest}"
+  sha="$(gh api "repos/$repo/commits/$ref" --jq .sha)"
   state_set IMAGE "$image"
+  state_set BUILT_TAG "$tag"; state_set BUILT_SHA "$sha"; state_set BUILT_REF "$ref"
   if [ -f "$ENV_FILE" ]; then env_set OPENPROJECT_IMAGE "$image"; info "pinned in $ENV_FILE"; fi
-  info "image: $image"
+  info "image: $image (built from $ref at $sha)"
+}
+
+# Publish a GitHub release for the deployed image. The notes list the PRs merged since the previous release.
+cmd_release() {
+  repo="${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+  image="${IMAGE:-$(state_get IMAGE)}"
+  default_tag="${image%@*}"; default_tag="${default_tag##*:}"
+  tag="${TAG:-$default_tag}"
+  [ -n "$tag" ] || die "no image tag known. Pass TAG=... or IMAGE=..."
+  if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then info "release $tag already exists"; return 0; fi
+  sha="${SHA:-}"; ref="${REF:-}"
+  if [ "$tag" = "$(state_get BUILT_TAG)" ]; then
+    [ -n "$ref" ] || ref="$(state_get BUILT_REF)"
+    [ -n "$sha" ] || sha="$(state_get BUILT_SHA)"
+  fi
+  if [ -z "$sha" ]; then
+    info "no release for $tag: its source commit is unknown. Run: make release TAG=$tag SHA=<commit>"
+    return 0
+  fi
+  prev="${PREV-$(gh release list --repo "$repo" --limit 1 --json tagName -q '.[0].tagName // ""')}"
+  file="$(mktemp)"
+  {
+    printf 'Deployed to %s on %s.\n\n' "$(state_get HOST)" "${DEPLOYED:-$(date -u +%Y-%m-%d)}"
+    printf 'Image: `%s`\n' "$image"
+    printf 'Source: %s at %s\n' "${ref:-$sha}" "$sha"
+    [ -z "${NOTES:-}" ] || printf '\n%s\n' "$NOTES"
+  } > "$file"
+  set -- --repo "$repo" --target "$sha" --title "$tag" --notes-file "$file" --generate-notes
+  [ -z "$prev" ] || set -- "$@" --notes-start-tag "$prev"
+  case "$tag" in dev-*|*-dev*) set -- "$@" --prerelease;; esac
+  url="$(gh release create "$tag" "$@")" || { rm -f "$file"; die "gh release create failed for $tag"; }
+  rm -f "$file"
+  info "release: $url"
 }
 
 cmd_configure() {
@@ -81,5 +116,5 @@ cmd_dns_wait() {
   die "$host does not resolve to $ip yet. Add the A record, then run this again."
 }
 
-cmd="${1:?usage: infra.sh <preflight|adopt|image|configure|dns-wait>}"; shift || true
-case "$cmd" in preflight) cmd_preflight;; adopt) cmd_adopt;; image) cmd_image;; configure) cmd_configure;; dns-wait) cmd_dns_wait;; *) die "unknown command $cmd";; esac
+cmd="${1:?usage: infra.sh <preflight|adopt|image|release|configure|dns-wait>}"; shift || true
+case "$cmd" in preflight) cmd_preflight;; adopt) cmd_adopt;; image) cmd_image;; release) cmd_release;; configure) cmd_configure;; dns-wait) cmd_dns_wait;; *) die "unknown command $cmd";; esac
