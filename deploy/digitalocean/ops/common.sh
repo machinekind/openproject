@@ -51,6 +51,20 @@ env_get_public() {
   { grep -E "^$1=" "$ENV_FILE" || true; } | tail -n 1 | cut -d= -f2-
 }
 
+semver_valid() { printf '%s\n' "$1" | grep -q -E '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; }
+latest_semver_release() {
+  gh release list --repo "$1" --limit 100 --json tagName -q '.[].tagName' \
+    | { grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sort -V | tail -n 1
+}
+bump_semver() {
+  [ -n "$1" ] || { echo 1.0.0; return 0; }
+  printf '%s\n' "$1" | awk -F. -v bump="$2" '{
+    if (bump == "major") printf "%d.0.0\n", $1 + 1
+    else if (bump == "minor") printf "%d.%d.0\n", $1, $2 + 1
+    else if (bump == "patch") printf "%d.%d.%d\n", $1, $2, $3 + 1
+    else exit 1 }' || die "BUMP must be major, minor or patch"
+}
+
 SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
 remote()     { ssh $SSH_OPTS "root@$(state_get DROPLET_IP)" "$@"; }
 remote_tty() { ssh -t -o StrictHostKeyChecking=accept-new "root@$(state_get DROPLET_IP)" "$@"; }

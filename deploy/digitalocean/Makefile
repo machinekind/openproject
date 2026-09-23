@@ -12,12 +12,12 @@ export
 help: ## [agent] List all targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
 	@echo; echo "  New deployment:  preflight, image, provision*, configure, dns-wait, up, create-admin*, harden, backup-install, roles"
-	@echo "  Update:          image TAG=..., deploy, verify, release  (* = a person must run it)"
+	@echo "  Update:          image BUMP=..., deploy, verify          (* = a person must run it)"
 
 # --- set up -------------------------------------------------------------------------------------
 preflight: ## [agent] Check tools, logins and the DigitalOcean names provision.sh uses
 	@$(OPS)/infra.sh preflight
-image: ## [agent] Build the fork image and pin it by digest. TAG=17.8.0-mcp.2 [REF=stable-17.8-mcp]
+image: ## [agent] Build the fork image and pin it by digest. BUMP=minor|patch|major or TAG=1.2.0 [REF=dev]
 	@$(OPS)/infra.sh image
 provision: ## [human] Create Droplet, database and firewall. Spends money. SSH_KEY_ID=...
 	@bash -c '. $(OPS)/common.sh; require_tty provision' && ./provision.sh
@@ -35,7 +35,7 @@ push: ## [agent] Copy the stack files to the server. Never overwrites a differin
 	@$(OPS)/stack.sh push
 deploy: ## [agent] Pull and restart. With IMAGE=... switch to that image first
 	@$(OPS)/stack.sh deploy
-release: ## [agent] Publish a GitHub release for the deployed image, with notes generated from merged PRs. [TAG=] [SHA=] [PREV=] [REF=] [IMAGE=] [NOTES=] [DEPLOYED=]
+release: ## [agent] Publish a GitHub release for the deployed image, with notes generated from merged PRs. [TAG=] [SHA=] [PREV=] [REF=] [UPSTREAM=] [IMAGE=] [NOTES=] [DEPLOYED=]
 	@$(OPS)/infra.sh release
 verify: ## [agent] Check the live site from the outside: TLS, redirects, closed endpoints, open ports
 	@$(OPS)/stack.sh verify

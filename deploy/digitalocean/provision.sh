@@ -102,7 +102,7 @@ These facts are saved in ${STATE_OUT}, so nothing depends on this printout.
 
 Next, from this directory (an agent can run all of these):
   make configure HOST=<host name> ADMIN_MAIL=<your address>     then create the DNS A record it names
-  make image TAG=<tag>                                          unless an image is already pinned
+  make image BUMP=minor                                         unless an image is already pinned
   make dns-wait
   make up
 
