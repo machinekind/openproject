@@ -38,8 +38,10 @@ gh workflow run fork-image.yml --ref dev -f ref=dev -f tag=1.1.0
 **Versioning.** Tags are the fork's own semantic version, `MAJOR.MINOR.PATCH`, optionally with a prerelease
 suffix such as `-rc.1`. Bump MAJOR when the upstream base moves to a new major version or a change breaks
 clients or agents, MINOR for new tools or features, PATCH for fixes. `make image BUMP=minor|patch|major`
-computes the next number from the latest final release. The upstream OpenProject version is recorded in
-each release's notes, not in the tag.
+computes the next number from the highest final version among the repository's releases, its git tags and
+the last local build. It resolves `REF` to a commit before dispatching, and refuses a version that already
+exists as a release, a tag or the last build unless `FORCE=1`. The upstream OpenProject version is recorded
+in each release's notes, not in the tag.
 
 The run summary prints one line, `OPENPROJECT_IMAGE=ghcr.io/...:<tag>@sha256:<digest>`. Copy it whole. The
 digest pins the exact image; a tag alone can be overwritten by anyone with write access to the repository.
@@ -115,9 +117,13 @@ differing server `.env`.
 migrates before web and worker start; if the pull or the migration fails, the running site stays up. Rolling
 back is `make deploy IMAGE=<previous image>`, provided the newer migrations were backwards compatible.
 Otherwise restore the database to the point before the update. `make status` shows the running image.
-Unused images older than a week are removed. Every `make deploy` publishes a GitHub release named after the image
-tag, with notes listing the PRs merged since the previous release; a rollback or an image not built on this
-machine gets no release unless you run `make release TAG=... SHA=...`.
+Unused images older than a week are removed.
+
+After a successful deploy, `make deploy` reads the image the server is running and publishes a GitHub release
+named after its tag, with notes listing the PRs merged since the previous final release below it. A failed
+release never fails the deploy. An image not built on this machine gets no release unless you run
+`make release IMAGE=... SHA=<commit>`. That also backfills a missed version: a final version older than the
+newest release is published without being marked latest, and a prerelease tag is published as a prerelease.
 
 ## Restoring
 

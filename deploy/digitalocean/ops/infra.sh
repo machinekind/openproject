@@ -52,12 +52,22 @@ cmd_image() {
     *) die "set exactly one of BUMP=major|minor|patch (next after the latest release) or TAG=1.2.0";;
   esac
   repo="${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
-  [ -n "${TAG:-}" ] || tag="$(bump_semver "$(latest_semver_release "$repo")" "$BUMP")"
+  sha="$(gh api "repos/$repo/commits/$ref" --jq .sha)" && [ -n "$sha" ] || die "could not resolve $ref on $repo"
+  names="$(release_and_tag_names "$repo")" || die "could not list the releases and tags of $repo"
+  names="$(printf '%s\n%s\n' "$names" "$(state_get BUILT_TAG)")"
+  if [ -z "${TAG:-}" ]; then
+    base="$(printf '%s\n' "$names" | max_final_semver)"
+    tag="$(bump_semver "$base" "$BUMP")"
+  fi
   semver_valid "$tag" || die "TAG must be semantic: MAJOR.MINOR.PATCH[-prerelease], for example 1.2.0"
+  if printf '%s\n' "$names" | grep -q -x -F -- "$tag" && [ "${FORCE:-0}" != "1" ]; then
+    die "$tag is already a release, a tag or the last build on $repo. Pick another version, or FORCE=1 to overwrite its image"
+  fi
+  upstream="$(upstream_version "$repo" "$sha")" || upstream=""
   info "next version: $tag"
   before="$(gh run list --repo "$repo" --workflow fork-image.yml --limit 1 --json databaseId -q '.[0].databaseId // 0')"
-  info "dispatching fork-image.yml on $repo for ref=$ref tag=$tag"
-  gh workflow run fork-image.yml --repo "$repo" --ref "${WORKFLOW_REF:-dev}" -f ref="$ref" -f tag="$tag" >/dev/null
+  info "dispatching fork-image.yml on $repo for $ref at $sha, tag $tag"
+  gh workflow run fork-image.yml --repo "$repo" --ref "${WORKFLOW_REF:-dev}" -f ref="$sha" -f tag="$tag" >/dev/null
   run=""; for _ in $(seq 1 30); do
     run="$(gh run list --repo "$repo" --workflow fork-image.yml --limit 1 --json databaseId -q '.[0].databaseId // 0')"
     [ "$run" != "$before" ] && [ "$run" != "0" ] && break; run=""; sleep 3
@@ -69,11 +79,9 @@ cmd_image() {
   [ -n "$digest" ] || die "could not read the image digest from run $run"
   owner="$(printf '%s' "${repo%%/*}" | tr '[:upper:]' '[:lower:]')"
   image="ghcr.io/${owner}/openproject:${tag}@${digest}"
-  sha="$(gh api "repos/$repo/commits/$ref" --jq .sha)"
-  upstream="$(upstream_version "$repo" "$sha")"
   state_set IMAGE "$image"
-  state_set BUILT_TAG "$tag"; state_set BUILT_SHA "$sha"; state_set BUILT_REF "$ref"; state_set BUILT_UPSTREAM "$upstream"
   if [ -f "$ENV_FILE" ]; then env_set OPENPROJECT_IMAGE "$image"; info "pinned in $ENV_FILE"; fi
+  state_set BUILT_TAG "$tag"; state_set BUILT_SHA "$sha"; state_set BUILT_REF "$ref"; state_set BUILT_UPSTREAM "$upstream"
   info "image: $image (built from $ref at $sha, upstream OpenProject ${upstream:-unknown})"
 }
 
@@ -92,10 +100,13 @@ cmd_release() {
     [ -n "$upstream" ] || upstream="$(state_get BUILT_UPSTREAM)"
   fi
   if [ -z "$sha" ]; then
-    info "no release for $tag: its source commit is unknown. Run: make release TAG=$tag SHA=<commit>"
+    info "no release for $tag: its source commit is unknown. Run: make release ${image:+IMAGE=$image }TAG=$tag SHA=<commit>"
     return 0
   fi
-  prev="${PREV-$(gh release list --repo "$repo" --limit 1 --json tagName -q '.[0].tagName // ""')}"
+  finals="$(final_releases "$repo")" || die "could not list the releases of $repo"
+  if [ -n "${PREV+set}" ]; then prev="$PREV"
+  elif semver_valid "$tag"; then prev="$(printf '%s\n%s\n' "$finals" "${tag%%-*}" | only_final_semver | sort -V -u | awk -v t="${tag%%-*}" '$0 == t { print p; exit } { p = $0 }')"
+  else prev="$(printf '%s\n' "$finals" | max_final_semver)"; fi
   file="$(mktemp)"
   {
     printf 'Deployed to %s on %s.\n\n' "$(state_get HOST)" "${DEPLOYED:-$(date -u +%Y-%m-%d)}"
@@ -105,7 +116,9 @@ cmd_release() {
   } > "$file"
   set -- --repo "$repo" --target "$sha" --title "$tag" --notes-file "$file" --generate-notes
   [ -z "$prev" ] || set -- "$@" --notes-start-tag "$prev"
-  if semver_valid "$tag" && [ "${tag#*-}" = "$tag" ]; then set -- "$@" --latest; else set -- "$@" --prerelease; fi
+  if [ -z "$(printf '%s\n' "$tag" | only_final_semver)" ]; then set -- "$@" --prerelease
+  elif [ "$(printf '%s\n%s\n' "$finals" "$tag" | max_final_semver)" = "$tag" ]; then set -- "$@" --latest
+  else set -- "$@" --latest=false; fi
   url="$(gh release create "$tag" "$@")" || { rm -f "$file"; die "gh release create failed for $tag"; }
   rm -f "$file"
   info "release: $url"

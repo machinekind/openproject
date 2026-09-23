@@ -52,9 +52,16 @@ env_get_public() {
 }
 
 semver_valid() { printf '%s\n' "$1" | grep -q -E '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; }
-latest_semver_release() {
-  gh release list --repo "$1" --limit 100 --json tagName -q '.[].tagName' \
-    | { grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sort -V | tail -n 1
+only_final_semver() { grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true; }
+max_final_semver() { only_final_semver | sort -V | tail -n 1; }
+# Every release (drafts and prereleases included) and git tag on the repository. Fails when gh does.
+release_and_tag_names() {
+  gh release list --repo "$1" --limit 1000 --json tagName -q '.[].tagName' || return 1
+  gh api "repos/$1/tags" --paginate -q '.[].name' || return 1
+}
+final_releases() {
+  gh release list --repo "$1" --limit 1000 --json tagName,isDraft,isPrerelease \
+    -q '.[] | select((.isDraft or .isPrerelease) | not) | .tagName' | only_final_semver
 }
 bump_semver() {
   [ -n "$1" ] || { echo 1.0.0; return 0; }

@@ -53,7 +53,9 @@ cmd_deploy() {
     info "image set to $IMAGE"
   fi
   remote "cd $REMOTE_DIR && ./deploy.sh" 2>&1 | redact
-  "$KIT_DIR/ops/infra.sh" release || info "release not published; run: make release"
+  running="$(remote "cd $REMOTE_DIR && docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q web)" 2>/dev/null)" || running=""
+  if [ -z "$running" ]; then info "running image unknown; no release published. Run: make release IMAGE=..."; return 0; fi
+  IMAGE="$running" "$KIT_DIR/ops/infra.sh" release || info "release not published; run: make release IMAGE=$running"
 }
 
 cmd_status() {
