@@ -32,8 +32,16 @@ membership tools. That code exists only in an image built from the fork. The off
 Build with the "Build fork image" workflow. It runs from the default branch and checks out the ref you name:
 
 ```
-gh workflow run fork-image.yml --ref dev -f ref=stable-17.8-mcp -f tag=17.8.0-mcp.1
+gh workflow run fork-image.yml --ref dev -f ref=dev -f tag=1.1.0
 ```
+
+**Versioning.** Tags are the fork's own semantic version, `MAJOR.MINOR.PATCH`, optionally with a prerelease
+suffix such as `-rc.1`. Bump MAJOR when the upstream base moves to a new major version or a change breaks
+clients or agents, MINOR for new tools or features, PATCH for fixes. `make image BUMP=minor|patch|major`
+computes the next number from the highest final version among the repository's releases, its git tags and
+the last local build. It resolves `REF` to a commit before dispatching, and refuses a version that already
+exists as a release, a tag or the last build unless `FORCE=1`. The upstream OpenProject version is recorded
+in each release's notes, not in the tag.
 
 The run summary prints one line, `OPENPROJECT_IMAGE=ghcr.io/...:<tag>@sha256:<digest>`. Copy it whole. The
 digest pins the exact image; a tag alone can be overwritten by anyone with write access to the repository.
@@ -44,11 +52,10 @@ but the next deploy fails at the pull until you log in again.
 **Only build with the workflow.** A local `docker build` copies the working tree, including ignored files
 such as local MCP client configs with API tokens.
 
-**Build from a stable base.** The fork's `dev` follows upstream's unreleased major version. Its migrations
-are ahead of every release, so a database created from it cannot move to an official image. Production
-branches are an upstream release tag plus the fork's commits, for example `stable-17.8-mcp`. The workflow
-runs no tests, so run `bundle exec rspec spec/requests/mcp spec/models/enterprise_token_spec.rb` on the
-branch before building it.
+**Production runs `dev`.** Production has run dev-based images since 2026-09-23. A dev build moves the schema
+past every upstream release, so rolling back to an earlier base is a database restore, not a redeploy. The
+seeder migrates before web starts. The workflow runs no tests, so run
+`bundle exec rspec spec/requests/mcp spec/models/enterprise_token_spec.rb` on the branch before building it.
 
 ## Operating it: `make`
 
@@ -68,7 +75,7 @@ for a secret or print one, and refuse to run without a terminal.
 | Check tools, logins, names | agent | `make preflight` |
 | Create Droplet, database, firewall | **human** | `make provision SSH_KEY_ID=<id>` |
 | Host name and admin mail | agent | `make configure HOST=<host> ADMIN_MAIL=<mail>`, then create the DNS A record it names |
-| Build and pin the image | agent | `make image TAG=<tag>` |
+| Build and pin the image | agent | `make image BUMP=minor` or `make image TAG=<semver>` |
 | Wait for DNS | agent | `make dns-wait`. Caddy requests a certificate on start, and failures count against rate limits |
 | Start | agent | `make up`. The first start migrates an empty database and takes 5 to 10 minutes |
 | First login | **human** | `make admin-password`, log in as `admin`, set a new password |
@@ -106,11 +113,17 @@ differing server `.env`.
 
 ## Updating
 
-`make image TAG=<new tag>`, then `make deploy IMAGE=<the printed image>`, then `make verify`. The seeder
+`make image BUMP=minor|patch|major`, then `make deploy IMAGE=<the printed image>`, then `make verify`. The seeder
 migrates before web and worker start; if the pull or the migration fails, the running site stays up. Rolling
 back is `make deploy IMAGE=<previous image>`, provided the newer migrations were backwards compatible.
 Otherwise restore the database to the point before the update. `make status` shows the running image.
 Unused images older than a week are removed.
+
+After a successful deploy, `make deploy` reads the image the server is running and publishes a GitHub release
+named after its tag, with notes listing the PRs merged since the previous final release below it. A failed
+release never fails the deploy. An image not built on this machine gets no release unless you run
+`make release IMAGE=... SHA=<commit>`. That also backfills a missed version: a final version older than the
+newest release is published without being marked latest, and a prerelease tag is published as a prerelease.
 
 ## Restoring
 

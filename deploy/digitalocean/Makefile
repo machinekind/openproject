@@ -12,12 +12,12 @@ export
 help: ## [agent] List all targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
 	@echo; echo "  New deployment:  preflight, image, provision*, configure, dns-wait, up, create-admin*, harden, backup-install, roles"
-	@echo "  Update:          image TAG=..., deploy, verify          (* = a person must run it)"
+	@echo "  Update:          image BUMP=..., deploy IMAGE=..., verify          (* = a person must run it)"
 
 # --- set up -------------------------------------------------------------------------------------
 preflight: ## [agent] Check tools, logins and the DigitalOcean names provision.sh uses
 	@$(OPS)/infra.sh preflight
-image: ## [agent] Build the fork image and pin it by digest. TAG=17.8.0-mcp.2 [REF=stable-17.8-mcp]
+image: ## [agent] Build the fork image and pin it by digest. BUMP=minor|patch|major or TAG=1.2.0 [REF=dev]. Refuses an existing version unless FORCE=1
 	@$(OPS)/infra.sh image
 provision: ## [human] Create Droplet, database and firewall. Spends money. SSH_KEY_ID=...
 	@bash -c '. $(OPS)/common.sh; require_tty provision' && ./provision.sh
@@ -33,8 +33,10 @@ up: ## [agent] First start: push files, create extensions, deploy, verify
 # --- run ----------------------------------------------------------------------------------------
 push: ## [agent] Copy the stack files to the server. Never overwrites a differing .env unless FORCE_ENV=1
 	@$(OPS)/stack.sh push
-deploy: ## [agent] Pull and restart. With IMAGE=... switch to that image first
+deploy: ## [agent] Pull and restart, then publish a release for the running image. With IMAGE=... switch to that image first
 	@$(OPS)/stack.sh deploy
+release: ## [agent] Publish a GitHub release for an image (default: the pinned one); backfills older versions without marking them latest, with notes generated from merged PRs. [TAG=] [SHA=] [PREV=] [REF=] [UPSTREAM=] [IMAGE=] [NOTES=] [DEPLOYED=]
+	@$(OPS)/infra.sh release
 verify: ## [agent] Check the live site from the outside: TLS, redirects, closed endpoints, open ports
 	@$(OPS)/stack.sh verify
 status: ## [agent] Containers, memory, disk, last backup
@@ -88,4 +90,4 @@ ghcr-logout: ## [agent] Remove the GHCR credential from the server
 mcp-register: ## [human] Register this instance's MCP endpoint in Claude Code. [MCP_NAME=openproject-prod]
 	@$(OPS)/maintain.sh mcp-register
 
-.PHONY: help preflight image provision adopt configure dns-wait up push deploy verify status summary logs env-diff env-push env-pull admin-password create-admin reset-password add-users unban harden roles backup-now backup-install backup-remote backup-remote-set restore-drill smtp-test smtp-configure ghcr-login ghcr-logout mcp-register
+.PHONY: help preflight image provision adopt configure dns-wait up push deploy release verify status summary logs env-diff env-push env-pull admin-password create-admin reset-password add-users unban harden roles backup-now backup-install backup-remote backup-remote-set restore-drill smtp-test smtp-configure ghcr-login ghcr-logout mcp-register

@@ -32,15 +32,27 @@ If the state file is missing, `make adopt` rebuilds it from the DigitalOcean acc
 
 ## Update production
 
-1. `make image TAG=<new tag> [REF=stable-17.8-mcp]` builds in GitHub Actions, waits about 7 minutes, and
-   pins the image **by digest** locally. Build from a stable-release branch, never from `dev`. The workflow
-   runs no tests, so run `bundle exec rspec spec/requests/mcp spec/models/enterprise_token_spec.rb` on that
-   branch first.
+1. `make image BUMP=minor|patch|major [REF=dev]` resolves `REF` to a commit, computes the next version from
+   the highest final version among the releases, git tags and the last local build, builds in GitHub
+   Actions, waits about 7 minutes, and pins the image **by digest** locally. Choose the bump from the PRs
+   merged since that release: major if the upstream base changed major version or a change breaks clients
+   or agents, minor if any adds a tool or feature, otherwise patch. `TAG=1.2.0` sets the version by hand
+   instead; it must be semver, `MAJOR.MINOR.PATCH[-prerelease]`. A version that already exists as a
+   release, a tag or the last build is refused; `FORCE=1` overwrites its published image tag, so ask the
+   user before passing it. Production has run
+   dev-based images since 2026-09-23: the schema is past every upstream release, so rolling back to an
+   earlier base is a database restore, not a redeploy. The workflow runs no tests, so run
+   `bundle exec rspec spec/requests/mcp spec/models/enterprise_token_spec.rb` on that branch first.
 2. `make deploy IMAGE=<the image line from step 1>` switches the server to it. The seeder migrates before
    web and worker start. If the pull or a migration fails, the running site stays up.
 3. `make verify`, then `make status`.
 4. Rolling back is `make deploy IMAGE=<previous image>`, provided the newer migrations were backwards
    compatible. `make status` shows the image that is running now; note it before you deploy.
+5. After a successful deploy, `make deploy` publishes a GitHub release for the image the server is running,
+   named after its tag, with notes listing the PRs merged since the previous final release below it. A
+   failed release never fails the deploy. An image not built on this machine, or a missed version, gets a
+   release with `make release IMAGE=<image> SHA=<commit>`: an older final version is not marked latest, a
+   prerelease tag is published as a prerelease.
 
 If the pull fails with `unauthorized`, the GHCR package is private and the server is not logged in. The user
 either makes the package public or runs `make ghcr-login GH_USER=<login>`.
@@ -52,7 +64,7 @@ either makes the package public or runs `make ghcr-login GH_USER=<login>`.
 | Check tools, logins and names | agent | `make preflight` |
 | Create Droplet, database, firewall | **human** | `make provision SSH_KEY_ID=<id>` |
 | Host name and admin mail | agent | `make configure HOST=<host> ADMIN_MAIL=<mail>`, then tell the user which DNS A record to create |
-| Build and pin the image | agent | `make image TAG=<tag>` |
+| Build and pin the image | agent | `make image BUMP=minor` (or `TAG=<semver>`) |
 | Wait for DNS | agent | `make dns-wait` |
 | Push files, create extensions, start, verify | agent | `make up` (the first start migrates an empty database and takes 5 to 10 minutes) |
 | First login | **human** | `make admin-password`, then log in as `admin` and set a new password |

@@ -5,7 +5,7 @@ name: Build fork image
 #
 # Manual on purpose: the build is long. It always runs this workflow file from the default branch and
 # checks out the branch, tag or SHA given in "ref", so the branch being built does not need to carry it.
-# Build from a stable-release based branch rather than dev (see deploy/digitalocean/README.md).
+# Production builds from dev (see deploy/digitalocean/README.md); `make image` passes the commit SHA as ref.
 # The run summary prints the image with its digest; production pins that digest.
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ on:
       ref:
         description: Branch, tag or SHA to build
         required: true
-        default: stable-17.8-mcp
+        default: dev
       tag:
         description: Image tag (defaults to the short SHA of the built commit)
         required: false

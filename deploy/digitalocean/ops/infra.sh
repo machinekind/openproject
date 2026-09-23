@@ -37,13 +37,37 @@ cmd_adopt() {
   info "adopted: droplet $id at $ip, database $db, host $(state_get HOST)"
 }
 
+upstream_version() {
+  gh api "repos/$1/contents/lib/open_project/version.rb?ref=$2" --jq .content | base64 -d \
+    | awk '$2 == "=" && $1 == "MAJOR" { ma = $3 } $2 == "=" && $1 == "MINOR" { mi = $3 } $2 == "=" && $1 == "PATCH" { pa = $3 }
+           END { if (ma != "" && mi != "" && pa != "") printf "%d.%d.%d\n", ma, mi, pa }'
+}
+
 # Build the production image with the fork-image workflow and pin it, by digest, in the local secrets file.
 cmd_image() {
-  ref="${REF:-stable-17.8-mcp}"; tag="${TAG:?set TAG, for example TAG=17.8.0-mcp.2}"
+  ref="${REF:-dev}"
+  case "${TAG:+t}${BUMP:+b}" in
+    t) tag="$TAG";;
+    b) case "$BUMP" in major|minor|patch) ;; *) die "BUMP must be major, minor or patch";; esac;;
+    *) die "set exactly one of BUMP=major|minor|patch (next after the latest release) or TAG=1.2.0";;
+  esac
   repo="${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+  sha="$(gh api "repos/$repo/commits/$ref" --jq .sha)" && [ -n "$sha" ] || die "could not resolve $ref on $repo"
+  names="$(release_and_tag_names "$repo")" || die "could not list the releases and tags of $repo"
+  names="$(printf '%s\n%s\n' "$names" "$(state_get BUILT_TAG)")"
+  if [ -z "${TAG:-}" ]; then
+    base="$(printf '%s\n' "$names" | max_final_semver)"
+    tag="$(bump_semver "$base" "$BUMP")"
+  fi
+  semver_valid "$tag" || die "TAG must be semantic: MAJOR.MINOR.PATCH[-prerelease], for example 1.2.0"
+  if printf '%s\n' "$names" | grep -q -x -F -- "$tag" && [ "${FORCE:-0}" != "1" ]; then
+    die "$tag is already a release, a tag or the last build on $repo. Pick another version, or FORCE=1 to overwrite its image"
+  fi
+  upstream="$(upstream_version "$repo" "$sha")" || upstream=""
+  info "next version: $tag"
   before="$(gh run list --repo "$repo" --workflow fork-image.yml --limit 1 --json databaseId -q '.[0].databaseId // 0')"
-  info "dispatching fork-image.yml on $repo for ref=$ref tag=$tag"
-  gh workflow run fork-image.yml --repo "$repo" --ref "${WORKFLOW_REF:-dev}" -f ref="$ref" -f tag="$tag" >/dev/null
+  info "dispatching fork-image.yml on $repo for $ref at $sha, tag $tag"
+  gh workflow run fork-image.yml --repo "$repo" --ref "${WORKFLOW_REF:-dev}" -f ref="$sha" -f tag="$tag" >/dev/null
   run=""; for _ in $(seq 1 30); do
     run="$(gh run list --repo "$repo" --workflow fork-image.yml --limit 1 --json databaseId -q '.[0].databaseId // 0')"
     [ "$run" != "$before" ] && [ "$run" != "0" ] && break; run=""; sleep 3
@@ -57,7 +81,47 @@ cmd_image() {
   image="ghcr.io/${owner}/openproject:${tag}@${digest}"
   state_set IMAGE "$image"
   if [ -f "$ENV_FILE" ]; then env_set OPENPROJECT_IMAGE "$image"; info "pinned in $ENV_FILE"; fi
-  info "image: $image"
+  state_set BUILT_TAG "$tag"; state_set BUILT_SHA "$sha"; state_set BUILT_REF "$ref"; state_set BUILT_UPSTREAM "$upstream"
+  info "image: $image (built from $ref at $sha, upstream OpenProject ${upstream:-unknown})"
+}
+
+# Publish a GitHub release for the deployed image. The notes list the PRs merged since the previous release.
+cmd_release() {
+  repo="${REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+  image="${IMAGE:-$(state_get IMAGE)}"
+  default_tag="${image%@*}"; default_tag="${default_tag##*:}"
+  tag="${TAG:-$default_tag}"
+  [ -n "$tag" ] || die "no image tag known. Pass TAG=... or IMAGE=..."
+  if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then info "release $tag already exists"; return 0; fi
+  sha="${SHA:-}"; ref="${REF:-}"; upstream="${UPSTREAM:-}"
+  if [ "$tag" = "$(state_get BUILT_TAG)" ]; then
+    [ -n "$ref" ] || ref="$(state_get BUILT_REF)"
+    [ -n "$sha" ] || sha="$(state_get BUILT_SHA)"
+    [ -n "$upstream" ] || upstream="$(state_get BUILT_UPSTREAM)"
+  fi
+  if [ -z "$sha" ]; then
+    info "no release for $tag: its source commit is unknown. Run: make release ${image:+IMAGE=$image }TAG=$tag SHA=<commit>"
+    return 0
+  fi
+  finals="$(final_releases "$repo")" || die "could not list the releases of $repo"
+  if [ -n "${PREV+set}" ]; then prev="$PREV"
+  elif semver_valid "$tag"; then prev="$(printf '%s\n%s\n' "$finals" "${tag%%-*}" | only_final_semver | sort -V -u | awk -v t="${tag%%-*}" '$0 == t { print p; exit } { p = $0 }')"
+  else prev="$(printf '%s\n' "$finals" | max_final_semver)"; fi
+  file="$(mktemp)"
+  {
+    printf 'Deployed to %s on %s.\n\n' "$(state_get HOST)" "${DEPLOYED:-$(date -u +%Y-%m-%d)}"
+    printf 'Image: `%s`\n' "$image"
+    printf 'Source: %s at %s%s\n' "${ref:-$sha}" "$sha" "${upstream:+ (upstream OpenProject $upstream)}"
+    [ -z "${NOTES:-}" ] || printf '\n%s\n' "$NOTES"
+  } > "$file"
+  set -- --repo "$repo" --target "$sha" --title "$tag" --notes-file "$file" --generate-notes
+  [ -z "$prev" ] || set -- "$@" --notes-start-tag "$prev"
+  if [ -z "$(printf '%s\n' "$tag" | only_final_semver)" ]; then set -- "$@" --prerelease
+  elif [ "$(printf '%s\n%s\n' "$finals" "$tag" | max_final_semver)" = "$tag" ]; then set -- "$@" --latest
+  else set -- "$@" --latest=false; fi
+  url="$(gh release create "$tag" "$@")" || { rm -f "$file"; die "gh release create failed for $tag"; }
+  rm -f "$file"
+  info "release: $url"
 }
 
 cmd_configure() {
@@ -65,7 +129,7 @@ cmd_configure() {
   env_set OPENPROJECT_HOST__NAME "$host"; state_set HOST "$host"
   [ -z "${ADMIN_MAIL:-}" ] || env_set OPENPROJECT_SEED__ADMIN__USER__MAIL "$ADMIN_MAIL"
   [ -z "${IMAGE:-}" ] || { env_set OPENPROJECT_IMAGE "$IMAGE"; state_set IMAGE "$IMAGE"; }
-  case "$(env_get_public OPENPROJECT_IMAGE)" in *CHANGE_ME*|"") echo "note: no image pinned yet. Run 'make image TAG=...' or pass IMAGE=...";; esac
+  case "$(env_get_public OPENPROJECT_IMAGE)" in *CHANGE_ME*|"") echo "note: no image pinned yet. Run 'make image BUMP=minor' or pass IMAGE=...";; esac
   info "configured host $host. Create a DNS A record: $host -> $(state_get DROPLET_IP)"
 }
 
@@ -81,5 +145,5 @@ cmd_dns_wait() {
   die "$host does not resolve to $ip yet. Add the A record, then run this again."
 }
 
-cmd="${1:?usage: infra.sh <preflight|adopt|image|configure|dns-wait>}"; shift || true
-case "$cmd" in preflight) cmd_preflight;; adopt) cmd_adopt;; image) cmd_image;; configure) cmd_configure;; dns-wait) cmd_dns_wait;; *) die "unknown command $cmd";; esac
+cmd="${1:?usage: infra.sh <preflight|adopt|image|release|configure|dns-wait>}"; shift || true
+case "$cmd" in preflight) cmd_preflight;; adopt) cmd_adopt;; image) cmd_image;; release) cmd_release;; configure) cmd_configure;; dns-wait) cmd_dns_wait;; *) die "unknown command $cmd";; esac
