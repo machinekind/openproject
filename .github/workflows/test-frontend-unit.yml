@@ -74,10 +74,5 @@ jobs:
       - name: Register plugins
         run: npm run ci:plugins:register_frontend
 
-      - name: Take ownership of HOME
-        # Actions points HOME at /github/home, owned by the image's pwuser, and
-        # firefox refuses to launch as root under a home it does not own.
-        run: chown root:root "$HOME"
-
       - name: Test
         run: npm test -- --browsers ${{ matrix.browser }} --reporters dot --reporters github-actions
