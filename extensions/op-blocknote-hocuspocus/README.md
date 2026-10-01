@@ -1,8 +1,5 @@
 # op-blocknote-hocuspocus
 
-[![Tests](https://github.com/opf/openproject/actions/workflows/hocuspocus-test.yml/badge.svg)](https://github.com/opf/openproject/actions/workflows/hocuspocus-test.yml)
-[![Docker](https://github.com/opf/openproject/actions/workflows/hocuspocus-docker.yml/badge.svg)](https://github.com/opf/openproject/actions/workflows/hocuspocus-docker.yml)
-
 A real-time collaborative editing server for [OpenProject](https://www.openproject.org/) documents, powered by [Yjs](https://github.com/yjs/yjs) and [Hocuspocus](https://tiptap.dev/docs/hocuspocus/introduction).
 
 ## Installation
