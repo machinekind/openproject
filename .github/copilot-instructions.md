@@ -57,16 +57,15 @@ See [AGENTS.md](../AGENTS.md) for all agent instructions.
 - **BIM Edition**: Tailored for construction industry needs. Code in `modules/bim/`, docs in `docs/bim-guide/`. Existing instances can be switched to BIM edition.
 
 #### GitHub Actions CI/CD
-- **test-core.yml** - Main test suite (units + features, ~40 min, runs on all PRs)
-- **rubocop-core.yml** - Ruby linting (runs on all PRs with Ruby changes)
-- **eslint-core.yml** - JS/TS linting (runs on all PRs with JS/TS changes)
-- **test-frontend-unit.yml** - Frontend unit tests
-- **brakeman-scan-core.yml** - Security scanning
-- **codeql-scan-core.yml** - Code quality/security analysis
+- **rubocop-core.yml** - Ruby linting (runs on PRs with Ruby changes)
+- **eslint-core.yml** - JS/TS linting (runs on PRs with JS/TS changes)
+- **erb-lint-core.yml** - ERB template linting (runs on PRs with ERB changes)
+- **test-frontend-unit.yml** - Frontend unit tests (chromium only)
+- **fork-image.yml** - Fork Docker image build
+- Ruby specs, Brakeman and CodeQL are not run in CI on this fork. Run specs locally before opening a PR.
 - **Skip CI**: Add `[ci skip]` to commit message to skip CI (use sparingly)
 
 #### Performance Considerations
-- Main test suite: 40 minutes timeout
 - Full Docker build: ~10-15 minutes (first time)
 - Bundle install: ~2-5 minutes
 - npm install: ~3-7 minutes
