@@ -12,7 +12,8 @@ export
 help: ## [agent] List all targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
 	@echo; echo "  New deployment:  preflight, image, provision*, configure, dns-wait, up, create-admin*, harden, backup-install, roles"
-	@echo "  Update:          image BUMP=..., deploy IMAGE=..., verify          (* = a person must run it)"
+	@echo "  Update:          merge to dev (GitHub Actions deploys), or image BUMP=..., deploy IMAGE=..., verify          (* = a person must run it)"
+	@echo "  CI once:         push, ci-setup*  (see README, Continuous deployment)"
 
 # --- set up -------------------------------------------------------------------------------------
 preflight: ## [agent] Check tools, logins and the DigitalOcean names provision.sh uses
@@ -37,6 +38,8 @@ deploy: ## [agent] Pull and restart, then publish a release for the running imag
 	@$(OPS)/stack.sh deploy
 release: ## [agent] Publish a GitHub release for an image (default: the pinned one); backfills older versions without marking them latest, with notes generated from merged PRs. [TAG=] [SHA=] [PREV=] [REF=] [UPSTREAM=] [IMAGE=] [NOTES=] [DEPLOYED=]
 	@$(OPS)/infra.sh release
+rollback: ## [agent] Switch back to the image that ran before the last image change. Only if the newer migrations are backwards compatible
+	@$(OPS)/stack.sh rollback
 verify: ## [agent] Check the live site from the outside: TLS, redirects, closed endpoints, open ports
 	@$(OPS)/stack.sh verify
 status: ## [agent] Containers, memory, disk, last backup
@@ -51,6 +54,20 @@ env-push: ## [agent] Make the local .env win
 	@$(OPS)/stack.sh env-push
 env-pull: ## [agent] Make the server's .env win (keeps a local .env.bak)
 	@$(OPS)/stack.sh env-pull
+
+# --- continuous deployment ----------------------------------------------------------------------
+ci-setup: ## [human] Create the GitHub Actions deploy key, the production environment and its variables. Rerun to rotate the key
+	@$(OPS)/ci.sh ci-setup
+ci-revoke: ## [agent] Make the server refuse the GitHub Actions deploy key
+	@$(OPS)/ci.sh ci-revoke
+ci-pause: ## [human] Stop GitHub Actions from deploying (repository variable DEPLOY_PAUSED=true)
+	@$(OPS)/ci.sh ci-pause
+ci-resume: ## [human] Let GitHub Actions deploy again
+	@$(OPS)/ci.sh ci-resume
+deploy-hold: ## [agent] Make the server refuse CI deploys, whatever GitHub says, until deploy-unhold
+	@$(OPS)/ci.sh deploy-hold
+deploy-unhold: ## [agent] Let the server accept CI deploys again
+	@$(OPS)/ci.sh deploy-unhold
 
 # --- accounts -----------------------------------------------------------------------------------
 admin-password: ## [human] Show the seeded admin's initial password
@@ -90,4 +107,4 @@ ghcr-logout: ## [agent] Remove the GHCR credential from the server
 mcp-register: ## [human] Register this instance's MCP endpoint in Claude Code. [MCP_NAME=openproject-prod]
 	@$(OPS)/maintain.sh mcp-register
 
-.PHONY: help preflight image provision adopt configure dns-wait up push deploy release verify status summary logs env-diff env-push env-pull admin-password create-admin reset-password add-users unban harden roles backup-now backup-install backup-remote backup-remote-set restore-drill smtp-test smtp-configure ghcr-login ghcr-logout mcp-register
+.PHONY: help preflight image provision adopt configure dns-wait up push deploy release verify status summary logs env-diff env-push env-pull admin-password create-admin reset-password add-users unban harden roles backup-now backup-install backup-remote backup-remote-set restore-drill smtp-test smtp-configure ghcr-login ghcr-logout mcp-register rollback ci-setup ci-revoke ci-pause ci-resume deploy-hold deploy-unhold

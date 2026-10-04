@@ -3,10 +3,9 @@ name: Build fork image
 # Builds the production "slim" image from this fork and pushes it to GHCR.
 # Production needs it: the fork's MCP entitlement and project setup tools are not in the official image.
 #
-# Manual on purpose: the build is long. It always runs this workflow file from the default branch and
-# checks out the branch, tag or SHA given in "ref", so the branch being built does not need to carry it.
-# Production builds from dev (see deploy/digitalocean/README.md); `make image` passes the commit SHA as ref.
-# The run summary prints the image with its digest; production pins that digest.
+# deploy-production.yml calls it for every push to dev; `make image` dispatches it by hand with a commit SHA as ref.
+# Either way it checks out "ref", so the branch being built does not need to carry this file.
+# Production pins the printed digest, never the tag.
 on:
   workflow_dispatch:
     inputs:
@@ -15,12 +14,27 @@ on:
         required: true
         default: dev
       tag:
-        description: Image tag (defaults to the short SHA of the built commit)
+        description: Image tag, MAJOR.MINOR.PATCH[-prerelease] (defaults to the short SHA of the built commit)
         required: false
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+      tag:
+        type: string
+        required: false
+        default: ""
+    outputs:
+      image:
+        description: The pushed image, pinned by digest
+        value: ${{ jobs.build.outputs.image }}
+      digest:
+        value: ${{ jobs.build.outputs.digest }}
+      tag:
+        value: ${{ jobs.build.outputs.tag }}
 
-permissions:
-  contents: read
-  packages: write
+permissions: {}
 
 concurrency:
   group: fork-image-${{ inputs.ref }}
@@ -30,8 +44,30 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ format('{0}:{1}@{2}', steps.meta.outputs.image, steps.meta.outputs.tag, steps.build.outputs.digest) }}
+      digest: ${{ steps.build.outputs.digest }}
+      tag: ${{ steps.meta.outputs.tag }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate inputs
+        env:
+          INPUT_REF: ${{ inputs.ref }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          ref_re='^[A-Za-z0-9._/-]+$'
+          tag_re='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if [[ ! $INPUT_REF =~ $ref_re || $INPUT_REF == -* ]]; then
+            echo "::error::ref must be a branch, tag or commit SHA made of letters, digits and . _ / -"
+            exit 1
+          fi
+          if [[ -n $INPUT_TAG && ! $INPUT_TAG =~ $tag_re ]]; then
+            echo "::error::tag must be MAJOR.MINOR.PATCH[-prerelease]"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false

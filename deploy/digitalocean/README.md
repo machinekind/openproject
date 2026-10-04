@@ -45,17 +45,17 @@ in each release's notes, not in the tag.
 
 The run summary prints one line, `OPENPROJECT_IMAGE=ghcr.io/...:<tag>@sha256:<digest>`. Copy it whole. The
 digest pins the exact image; a tag alone can be overwritten by anyone with write access to the repository.
-GHCR packages start private. Either make the package public, or run `docker login ghcr.io` on the Droplet
-once with a token that has only `read:packages`. If that token expires, the running site is unaffected,
-but the next deploy fails at the pull until you log in again.
+The pipeline assumes the package `ghcr.io/machinekind/openproject` is public (the source is public too), so
+the Droplet pulls without credentials. A private package needs `make ghcr-login` on the Droplet, and every
+deploy fails at the pull once that token expires.
 
 **Only build with the workflow.** A local `docker build` copies the working tree, including ignored files
 such as local MCP client configs with API tokens.
 
 **Production runs `dev`.** Production has run dev-based images since 2026-09-23. A dev build moves the schema
 past every upstream release, so rolling back to an earlier base is a database restore, not a redeploy. The
-seeder migrates before web starts. The workflow runs no tests, so run
-`bundle exec rspec spec/requests/mcp spec/models/enterprise_token_spec.rb` on the branch before building it.
+seeder migrates before web starts. Every push to dev runs the fork specs and the frontend unit tests before
+anything is deployed; see Continuous deployment.
 
 ## Operating it: `make`
 
@@ -96,6 +96,130 @@ unreadable. Do not run `provision.sh` with `bash -x`.
 differ between the laptop's and the server's `.env` without showing values; `make push` never overwrites a
 differing server `.env`.
 
+## Continuous deployment
+
+### What happens on a push to dev
+
+Workflow `.github/workflows/deploy-production.yml`. Jobs, in order: frontend unit tests, fork specs, Next
+version, build (`fork-image.yml`), Deploy (environment `production`), Publish release. One run at a time; a
+newer push replaces a waiting run, so a burst of merges deploys only the newest. Every merge deploys,
+including Dependabot's.
+
+The required checks 'Fork specs' and 'Units (chromium)' on the dev ruleset are what stops a red PR from
+merging (see Recommended GitHub settings). Without them, only the push-to-dev run gates production.
+
+### Versions
+
+PATCH by default. MINOR when the merged PR has the label `release:minor`, or when the workflow is run by hand
+with `bump=minor`. If the merge adds migrations (`db/migrate` or `modules/*/db/migrate`) since the latest
+release, the run stops at 'Next version' unless the bump is MINOR, and the step summary lists the migrations.
+Treat upstream syncs as `release:minor`. MAJOR never happens automatically: `make image BUMP=major`, then run
+the workflow with `image=<printed image>`, then `make release IMAGE=... SHA=...`. The run refuses to start
+while the repository has no final release.
+
+### What the server allows
+
+The deploy key is one line in `/root/.ssh/authorized_keys`:
+
+```
+restrict,command="/srv/openproject/ops/remote/ci-deploy.sh" ssh-ed25519 <key> github-actions-deploy
+```
+
+The key can do three things: `deploy <ghcr.io/machinekind/openproject:<tag>@sha256:<digest>>`, `status` and
+`version`. No shell, no file copy, no port forwarding. CI never copies files to the server. Before each
+deploy, the runner compares the hashes of `deploy.sh`, `docker-compose.yml`, `Caddyfile` and
+`ops/remote/ci-deploy.sh` on the server with the commit. When they differ, it stops and asks for `make push`
+(agent) followed by re-running the job.
+
+### What deploy.sh does
+
+- Takes a lock (`another deploy is running`).
+- Pulls before `.env` changes, so a failed pull changes nothing.
+- Dumps the database to `/var/backups/openproject/db-predeploy-<tag>-<YYYYmmddHHMM>.dump`. The last 3 are
+  kept, at most 7 days, because the nightly backup cleanup also removes older ones. It takes about a minute.
+- Runs the seeder migration.
+- Waits for health for up to 10 minutes.
+
+On failure, `.env` goes back to the previous image and the old image is not restarted. Images other than the
+current and the previous one are removed after a healthy deploy. The last line is `running: <image>`, and the
+runner checks it. Afterwards the runner runs the checks of `make verify` from outside, and only then publishes
+the release.
+
+### One-time setup
+
+| Step | Who | Command |
+|---|---|---|
+| Host key known | agent | `make status`. The first time, compare the fingerprint with the DigitalOcean console |
+| Make the package public: package settings page of `ghcr.io/machinekind/openproject`, Change visibility, Public. Then drop the Droplet's token | **human**, agent | `make ghcr-logout` |
+| Put the current kit on the server | agent | `make push` from an up-to-date dev |
+| Create the GitHub side and install the key | **human** | `make ci-setup` |
+| Create the label | **human** | `gh label create release:minor --repo machinekind/openproject --color 0E8A16 --description "Deploy as a MINOR release; required when a merge adds migrations"` |
+| Baseline release; the human decides the number | **human** | `make release IMAGE=<running image from make status> TAG=<baseline, e.g. 1.0.0> SHA=<its commit>` |
+| First run | human or agent | `gh workflow run deploy-production.yml --repo machinekind/openproject --ref dev` (add `-f bump=minor` if migrations landed since the baseline) |
+
+`make ci-setup` creates the environment `production`, limited to branch dev, the secret `DEPLOY_SSH_KEY`, the
+variables `DEPLOY_HOST_IP`, `DEPLOY_HOST_NAME` and `DEPLOY_SSH_HOST_KEY` (taken from the operator's
+known_hosts, not from a scan), and the repository variable `DEPLOY_PAUSED`. The private key lives only in a
+temporary directory that is deleted. Rerunning `make ci-setup` rotates the key.
+
+### Pausing
+
+- `make ci-pause` / `make ci-resume` (human): set the repository variable `DEPLOY_PAUSED`. Tests and build
+  still run.
+- `make deploy-hold` / `make deploy-unhold` (agent): create or remove `/srv/openproject/DEPLOY_PAUSED` on the
+  server. The server refuses CI deploys even if the variable says otherwise.
+
+Pause before a risky upstream sync and resume after reading the migration list.
+
+### Rolling back
+
+In an incident, first run `make -C deploy/digitalocean deploy-hold` (or `make ci-pause`). A later push to dev
+replaces a waiting rollback dispatch in the queue. `make rollback` from a laptop does not pass through the
+queue.
+
+`make rollback` (agent) deploys the image recorded in `/srv/openproject/.deploy/previous-image`. Running it
+twice switches back again. From GitHub:
+
+```
+gh workflow run deploy-production.yml --repo machinekind/openproject --ref dev -f image=<image>
+```
+
+Each release's notes show its image. Rolling back is valid only when the newer migrations are backwards
+compatible; otherwise see Restoring.
+
+### Revoking
+
+`make ci-revoke` (agent) removes the key from the server at once. A person then runs
+`gh secret delete DEPLOY_SSH_KEY --env production --repo machinekind/openproject`.
+
+### Public logs
+
+The repository is public, so Actions logs are too. Server output passes through the redact filter. Never add
+`set -x` to the kit and never print `docker compose logs` in a workflow.
+
+### Recommended GitHub settings
+
+A person runs these. The pipeline works without them.
+
+Require the checks 'Fork specs' and 'Units (chromium)' on the dev ruleset:
+
+```
+gh api repos/machinekind/openproject/rulesets/23618378 \
+  | jq '{name, target, enforcement, conditions, bypass_actors, rules: (.rules + [{"type":"required_status_checks","parameters":{"strict_required_status_checks_policy":false,"do_not_enforce_on_create":false,"required_status_checks":[{"context":"Fork specs","integration_id":15368},{"context":"Units (chromium)","integration_id":15368}]}}])}' \
+  | gh api -X PUT repos/machinekind/openproject/rulesets/23618378 --input -
+```
+
+Also consider 1 required approval with `require_last_push_approval` once there are two reviewers, and fewer
+always-bypass actors. Only bypass actors can update dev today.
+
+Restrict Actions to pinned, selected actions:
+
+```
+gh api -X PUT repos/machinekind/openproject/actions/permissions -F enabled=true -f allowed_actions=selected -F sha_pinning_required=true
+gh api -X PUT repos/machinekind/openproject/actions/permissions/selected-actions -F github_owned_allowed=true -F verified_allowed=true \
+  -f 'patterns_allowed[]=opf/action-erblint@*' -f 'patterns_allowed[]=reviewdog/*' -f 'patterns_allowed[]=ruby/setup-ruby@*' -f 'patterns_allowed[]=docker/*'
+```
+
 ## MCP in production
 
 - The endpoint is `https://<host>/mcp`. Clients authenticate with a personal API token (Basic auth, user
@@ -113,23 +237,38 @@ differing server `.env`.
 
 ## Updating
 
-`make image BUMP=minor|patch|major`, then `make deploy IMAGE=<the printed image>`, then `make verify`. The seeder
-migrates before web and worker start; if the pull or the migration fails, the running site stays up. Rolling
-back is `make deploy IMAGE=<previous image>`, provided the newer migrations were backwards compatible.
-Otherwise restore the database to the point before the update. `make status` shows the running image.
-Unused images older than a week are removed.
+GitHub Actions deploys every merge to dev (see Continuous deployment). The laptop path still works and uses the
+same `deploy.sh`: `make image BUMP=minor|patch|major`, `make deploy IMAGE=<the printed image>`, `make verify`.
+`make status` shows the running image.
+
+Failures:
+
+- A failed pull changes nothing.
+- A failed migration leaves web and worker stopped (Caddy answers 502) with `.env` back on the previous image.
+- A health timeout leaves the new containers running with `.env` back on the previous image.
+
+In both of the last two cases a person decides between `make rollback` (only with backwards compatible
+migrations) and a database restore. Even a successful deploy has a few minutes of downtime: migrate, seed,
+then web boot. Images other than the current and the previous one are removed after a healthy deploy.
 
 After a successful deploy, `make deploy` reads the image the server is running and publishes a GitHub release
 named after its tag, with notes listing the PRs merged since the previous final release below it. A failed
 release never fails the deploy. An image not built on this machine gets no release unless you run
 `make release IMAGE=... SHA=<commit>`. That also backfills a missed version: a final version older than the
 newest release is published without being marked latest, and a prerelease tag is published as a prerelease.
+In CI the release is published only after verify passes, and a dispatch with `image` publishes none.
 
 ## Restoring
 
+**Pause deploys first:** `make deploy-hold`.
+
+**Database, from the pre-deploy dump.** The newest `/var/backups/openproject/db-predeploy-*.dump` was taken
+seconds before the last migration. Restore it with the portable-dump procedure below, using that file.
+
 **Database, point in time.** Control panel, database, Backups, "Restore to new cluster". Add the trusted
-source `tag:openproject` to the new cluster, put its private URL into `.env` (database name `openproject`,
-`&pool=12` appended), run `./deploy.sh`.
+source `tag:openproject` to the new cluster, put its private URL into the local `.env` (database name
+`openproject`, `&pool=12` appended), run `make env-push`, then `make rollback` or
+`make deploy IMAGE=<image that matches that point in time>`.
 
 **Database, from a portable dump.** `make restore-drill` proves the newest dump restores, using a scratch
 database that it drops afterwards. For a real restore, do the same by hand into a fresh database, never over

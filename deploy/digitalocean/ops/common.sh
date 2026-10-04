@@ -71,10 +71,16 @@ bump_semver() {
     else if (bump == "patch") printf "%d.%d.%d\n", $1, $2, $3 + 1
     else exit 1 }' || die "BUMP must be major, minor or patch"
 }
+# Reads lib/open_project/version.rb on stdin and prints MAJOR.MINOR.PATCH, or nothing.
+version_rb_triplet() {
+  awk '$2 == "=" && $1 == "MAJOR" { ma = $3 } $2 == "=" && $1 == "MINOR" { mi = $3 } $2 == "=" && $1 == "PATCH" { pa = $3 }
+       END { if (ma != "" && mi != "" && pa != "") printf "%d.%d.%d\n", ma, mi, pa }'
+}
 
-SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
+case "${OP_STRICT_HOST_KEY:-}" in yes) HOST_KEY_CHECKING=yes ;; *) HOST_KEY_CHECKING=accept-new ;; esac
+SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=$HOST_KEY_CHECKING -o ConnectTimeout=10"
 remote()     { ssh $SSH_OPTS "root@$(state_get DROPLET_IP)" "$@"; }
-remote_tty() { ssh -t -o StrictHostKeyChecking=accept-new "root@$(state_get DROPLET_IP)" "$@"; }
+remote_tty() { ssh -t -o StrictHostKeyChecking=$HOST_KEY_CHECKING "root@$(state_get DROPLET_IP)" "$@"; }
 
 # Run a Ruby file from ops/rails inside the web container. Arguments are passed through.
 # When SECRET_STDIN=1, the first line of stdin becomes $OP_SECRET inside the container,

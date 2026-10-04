@@ -2,23 +2,9 @@ name: "Frontend test suite"
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - dev
-      - release/*
-    paths:
-      - '**/frontend/**/*.ts'
-      - '**/frontend/**/*.js'
-      - '**/frontend/**/*.json'
-      - '.github/workflows/test-frontend-unit.yml'
-
+  workflow_call:
   pull_request:
     types: [opened, reopened, synchronize]
-    paths:
-      - '**/frontend/**/*.ts'
-      - '**/frontend/**/*.js'
-      - '**/frontend/**/*.json'
-      - '.github/workflows/test-frontend-unit.yml'
 
 permissions:
   contents: read

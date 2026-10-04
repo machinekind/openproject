@@ -1,0 +1,71 @@
+name: Fork specs
+
+# Specs for the fork's own features; deploy-production.yml runs them before every deploy.
+# spec/features/admin/mcp_configuration_spec.rb is left out: it needs Chrome and a frontend build.
+on:
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  specs:
+    name: Fork specs
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      RAILS_ENV: test
+      DATABASE_URL: postgres://postgres@localhost:5432/openproject_test
+      OPENPROJECT_DISABLE_DEV_ASSET_PROXY: "1"
+      BUNDLE_WITHOUT: development:production
+      RUBYOPT: -W0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Rails dumps db/structure.sql after migrating, and the runner's default pg_dump 16 refuses a 17 server.
+      - name: Install the PostgreSQL 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client-17
+          echo /usr/lib/postgresql/17/bin >> "$GITHUB_PATH"
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          bundler-cache: true
+      - name: Create the test database
+        run: bin/rails db:create db:migrate
+      - name: Run the fork specs
+        run: >-
+          bundle exec rspec
+          modules/boards/spec/requests/mcp_tools
+          modules/costs/spec/requests/mcp_tools
+          spec/requests/mcp
+          spec/models/enterprise_token_spec.rb
+          spec/models/token/invite_link_spec.rb
+          spec/requests/account/join_spec.rb
+          spec/requests/members/invite_link_spec.rb
+          spec/requests/users/invitation_link_spec.rb
+          spec/requests/users/invite_link_spec.rb
+          spec/services/users/register_user_service_spec.rb
+          spec/lib/open_project/rate_limiting/invite_link_join_spec.rb
+          spec/components/users/invitation_link_dialog_component_spec.rb
+          spec/lib/api/v3/configuration/configuration_representer_spec.rb
+          spec/requests/api/v3/types/types_by_workspace_resource_spec.rb

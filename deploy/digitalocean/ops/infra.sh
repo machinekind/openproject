@@ -38,9 +38,7 @@ cmd_adopt() {
 }
 
 upstream_version() {
-  gh api "repos/$1/contents/lib/open_project/version.rb?ref=$2" --jq .content | base64 -d \
-    | awk '$2 == "=" && $1 == "MAJOR" { ma = $3 } $2 == "=" && $1 == "MINOR" { mi = $3 } $2 == "=" && $1 == "PATCH" { pa = $3 }
-           END { if (ma != "" && mi != "" && pa != "") printf "%d.%d.%d\n", ma, mi, pa }'
+  gh api "repos/$1/contents/lib/open_project/version.rb?ref=$2" --jq .content | base64 -d | version_rb_triplet
 }
 
 # Build the production image with the fork-image workflow and pin it, by digest, in the local secrets file.
@@ -109,7 +107,7 @@ cmd_release() {
   else prev="$(printf '%s\n' "$finals" | max_final_semver)"; fi
   file="$(mktemp)"
   {
-    printf 'Deployed to %s on %s.\n\n' "$(state_get HOST)" "${DEPLOYED:-$(date -u +%Y-%m-%d)}"
+    printf 'Deployed to %s on %s.\n\n' "${DEPLOY_HOST_NAME:-$(state_get HOST)}" "${DEPLOYED:-$(date -u +%Y-%m-%d)}"
     printf 'Image: `%s`\n' "$image"
     printf 'Source: %s at %s%s\n' "${ref:-$sha}" "$sha" "${upstream:+ (upstream OpenProject $upstream)}"
     [ -z "${NOTES:-}" ] || printf '\n%s\n' "$NOTES"

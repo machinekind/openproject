@@ -1,6 +1,6 @@
 ---
 name: openproject-deploy
-description: Deploy, update, inspect and maintain the DigitalOcean production instance of this OpenProject fork through the Makefile in deploy/digitalocean. Use whenever the user asks to deploy, redeploy, update or roll back production, build or pin the production image, check whether the site is up or healthy, look at production logs or status, run or verify backups, do a restore drill, harden accounts, set up roles, configure mail, or stand up a new instance, even if they only say "ship it", "is prod ok" or "set it up again".
+description: Deploy, update, inspect and maintain the DigitalOcean production instance of this OpenProject fork through the Makefile in deploy/digitalocean. Use whenever the user asks to deploy, redeploy, update or roll back production, build or pin the production image, check whether the site is up or healthy, look at production logs or status, run or verify backups, check, pause or roll back the GitHub Actions deploy pipeline, do a restore drill, harden accounts, set up roles, configure mail, or stand up a new instance, even if they only say "ship it", "is prod ok" or "set it up again".
 ---
 
 # Operating the DigitalOcean deployment
@@ -32,6 +32,12 @@ If the state file is missing, `make adopt` rebuilds it from the DigitalOcean acc
 
 ## Update production
 
+Production deploys itself on every merge to dev through `.github/workflows/deploy-production.yml` (tests,
+version, build, deploy, verify, release). Look first:
+`gh run list --workflow deploy-production.yml --repo machinekind/openproject --limit 5`, and
+`gh run view <id> --repo machinekind/openproject --log-failed` for failures. The numbered steps below are the
+manual path for hotfixes and new instances.
+
 1. `make image BUMP=minor|patch|major [REF=dev]` resolves `REF` to a commit, computes the next version from
    the highest final version among the releases, git tags and the last local build, builds in GitHub
    Actions, waits about 7 minutes, and pins the image **by digest** locally. Choose the bump from the PRs
@@ -41,10 +47,9 @@ If the state file is missing, `make adopt` rebuilds it from the DigitalOcean acc
    release, a tag or the last build is refused; `FORCE=1` overwrites its published image tag, so ask the
    user before passing it. Production has run
    dev-based images since 2026-09-23: the schema is past every upstream release, so rolling back to an
-   earlier base is a database restore, not a redeploy. The workflow runs no tests, so run
-   `bundle exec rspec spec/requests/mcp spec/models/enterprise_token_spec.rb` on that branch first.
+   earlier base is a database restore, not a redeploy.
 2. `make deploy IMAGE=<the image line from step 1>` switches the server to it. The seeder migrates before
-   web and worker start. If the pull or a migration fails, the running site stays up.
+   web and worker start. A failed pull changes nothing. A failed migration leaves web and worker stopped and puts .env back on the previous image; tell the user, because rolling back is only safe with backwards compatible migrations.
 3. `make verify`, then `make status`.
 4. Rolling back is `make deploy IMAGE=<previous image>`, provided the newer migrations were backwards
    compatible. `make status` shows the image that is running now; note it before you deploy.
@@ -56,6 +61,21 @@ If the state file is missing, `make adopt` rebuilds it from the DigitalOcean acc
 
 If the pull fails with `unauthorized`, the GHCR package is private and the server is not logged in. The user
 either makes the package public or runs `make ghcr-login GH_USER=<login>`.
+
+## Continuous deployment
+
+| Situation | What you do |
+|---|---|
+| 'Next version' fails with new migrations | Tell the user. They add the label `release:minor` to the merged PR and you re-run with `gh run rerun <id> --repo machinekind/openproject --failed`, or run `gh workflow run deploy-production.yml --repo machinekind/openproject --ref dev -f bump=minor` once they agree. |
+| 'no final release yet' | The user chooses a baseline version; then `make release IMAGE=... TAG=... SHA=...`. |
+| 'deploy kit differs' | `make push`, then re-run the failed jobs. |
+| 'refused: deploys are paused on this server' | Someone ran deploy-hold. Run `make deploy-unhold` only when the user says so. |
+| Pull fails with 'unauthorized' | The package is private and the server has no valid login; the user makes it public or runs `make ghcr-login`. |
+| Site broken after a deploy | `make deploy-hold`, then `make status` and `make logs SERVICE=seeder`; offer `make rollback` and say it is only safe with backwards compatible migrations. |
+
+Agent targets: `deploy-hold`, `deploy-unhold`, `rollback`, `ci-revoke`, `push`. Human targets: `ci-setup`,
+`ci-pause`, `ci-resume` (hand over the exact command). Never read, request or print `DEPLOY_SSH_KEY`; never
+change GitHub environments, secrets, rulesets or package visibility yourself.
 
 ## A new instance
 
