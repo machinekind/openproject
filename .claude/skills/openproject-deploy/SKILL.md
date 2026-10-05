@@ -38,32 +38,39 @@ version, build, deploy, verify, release). Look first:
 `gh run view <id> --repo machinekind/openproject --log-failed` for failures. A fix normally ships by merging
 it to dev. The numbered steps below are the manual path for new instances and for a hotfix that cannot wait;
 the next CI run deploys dev over a manual deploy, so run `make deploy-hold` before a manual hotfix deploy,
-tell the user, and run `make deploy-unhold` only when the fix is on dev and the user agrees.
+tell the user, and run `make deploy-unhold` only when the fix is on dev and the user agrees. Unholding deploys
+nothing: then, once the user agrees, dispatch
+`gh workflow run deploy-production.yml --repo machinekind/openproject --ref dev -f bump=patch` (their login
+must be in `DEPLOY_DISPATCHERS`) or wait for the next push to dev.
 
 1. `make image BUMP=minor|patch|major [REF=dev]` resolves `REF` to a commit (keep `REF=dev`: a release built
    from a commit that is not on dev stops every CI run at 'Next version' until that commit is merged into dev), computes the next version from
    the highest final version among the releases, git tags and the last local build, builds in GitHub
-   Actions, waits about 7 minutes, and pins the image **by digest** locally. Choose the bump from the PRs
+   Actions, waits about 7 minutes, and pins the image **by digest** locally. Never build a pull request branch
+   or another commit that is not on dev: a dispatched build gets a token that could write the shared build cache. Choose the bump from the PRs
    merged since that release: major if the upstream base changed major version or a change breaks clients
    or agents, minor if any adds a tool or feature, otherwise patch. `TAG=1.2.0` sets the version by hand
    instead; it must be semver, `MAJOR.MINOR.PATCH[-prerelease]`. A version that already exists as a
    release, a tag or the last build is refused; `FORCE=1` overwrites its published image tag, so ask the
-   user before passing it. The build stops at 'Validate inputs' with '... may not set a version tag' when
+   user before passing it. The build stops at 'Validate inputs' with '... may not run this workflow by hand' when
    the user's login is not in `DEPLOY_DISPATCHERS`: tell the user; a repository admin adds it, never change
    it yourself. Production has run
    dev-based images since 2026-09-23: the schema is past every upstream release, so rolling back to an
    earlier base is a database restore, not a redeploy.
 2. `make deploy IMAGE=<the image line from step 1>` switches the server to it. The seeder migrates before
    web and worker start. A failed pull changes nothing. A failed deploy restarts the previous image by itself
-   only when the schema is still the one that image last ran healthy on; the output then says 'rolled back
-   automatically'. This never happens on the first deploy after a kit update. Otherwise the site stays down
+   only when this attempt's seeder finished and the schema is still the one that image last ran healthy on;
+   the output then says 'rolled back automatically'. This never happens on the first deploy after a kit
+   update that changes the fingerprint. A failure that says 'No image switch happened' (no `IMAGE`, or the
+   image already running) changed nothing: find the cause with `make logs`, often a value in `.env`
+   (`make env-diff`), and run the same deploy again. Otherwise the site stays down
    or unhealthy and the restore point is printed (also in `make status`); tell the user, because rolling
    back is only safe with backwards compatible migrations. The deploy keeps running on the server if your command times out; check with
    `make status`.
 3. `make verify`, then `make status`.
 4. Rolling back is `make rollback`, provided the newer migrations were backwards compatible. It deploys the
-   previous image that `make status` shows: the image `.env` named before the last switch, also when that
-   switch failed.
+   previous image that `make status` shows: the image before the last successful switch, or, after a failed
+   switch that was not rolled back automatically, the image that switch replaced.
 5. After a successful deploy, `make deploy` publishes a GitHub release for the image the server is running,
    named after its tag, with notes listing the PRs merged since the previous final release below it. A
    failed release never fails the deploy. An image not built on this machine, or a missed version, gets a
@@ -78,17 +85,21 @@ either makes the package public or runs `make ghcr-login GH_USER=<login>`.
 | Situation | What you do |
 |---|---|
 | 'Next version' fails with new migrations | Tell the user. They add the label `release:minor` to any PR merged since the latest release. If the run's commit is still the tip of dev, re-run with `gh run rerun <id> --repo machinekind/openproject --failed`; otherwise wait for the newest run or, once they agree, run `gh workflow run deploy-production.yml --repo machinekind/openproject --ref dev -f bump=minor`. |
-| 'is not an ancestor' at 'Next version', or 'dev has moved on' at Deploy | The run is stale. 'dev has moved on' comes from a re-run or a dispatch whose commit is no longer the tip of dev. Do not re-run; the run for the newest commit deploys. A first-attempt run that waited in the queue deploys its older commit, and the newer run follows: that is normal. 'is not on dev any more' means dev was rewritten; tell the user. If the latest release was built from a commit that is not on dev, tell the user to merge that commit into dev with a merge commit. |
-| '... may not run this workflow by hand', '... may not set a version tag', or 'DEPLOY_DISPATCHERS is missing, empty or not GitHub logins separated by commas' | The user's login is not in the repository variable `DEPLOY_DISPATCHERS`, or its value is malformed. It takes logins separated by commas without spaces. A repository admin sets it; never change it yourself. A refused dispatch shows a failed 'Check the dispatcher' job; with a malformed value the Deploy job may also start and fail at 'Resolve the image', which is expected. |
+| 'is not an ancestor' at 'Next version', or 'dev has moved on' at 'Check the run' or Deploy | The run is stale. 'dev has moved on' comes from a re-run or a dispatch whose commit is no longer the tip of dev. Do not re-run; the run for the newest commit deploys. A first-attempt run that waited in the queue deploys its older commit, and the newer run follows: that is normal. 'is not on dev any more' means dev was rewritten; tell the user. If the latest release was built from a commit that is not on dev, tell the user to merge that commit into dev with a merge commit. |
+| '... may not run this workflow by hand' or 'DEPLOY_DISPATCHERS is missing, empty or not GitHub logins separated by commas' | The user's login is not in the repository variable `DEPLOY_DISPATCHERS`, or its value is malformed. It takes logins separated by commas without spaces. A repository admin sets it; never change it yourself. A refused dispatch shows a failed 'Check the run' job; with a malformed value the Deploy job may also start and fail at 'Resolve the image', which is expected. |
 | A MAJOR release | Only when the user asks: `gh workflow run deploy-production.yml --repo machinekind/openproject --ref dev -f bump=major`. |
 | Deploy error 'DEPLOY_SSH_KEY: is empty ... triggered by a bot' after a bot's push | Runs started by a bot get no environment secrets. Dispatch as a `DEPLOY_DISPATCHERS` login: `gh workflow run deploy-production.yml --repo machinekind/openproject --ref dev` once the user agrees. Do not re-run the run and do not re-run `ci-setup`; neither helps. |
 | 'no final release yet' | The user chooses a baseline version; then `make release IMAGE=... TAG=... SHA=...`. |
-| 'deploy kit differs' | `make push`, then re-run the failed jobs if the run's commit is still the tip of dev. |
-| 'refused: deploys are paused on this server' | Someone ran deploy-hold. Run `make deploy-unhold` only when the user says so. |
+| 'deploy kit differs' | `make push` from an up-to-date dev checkout, never from a feature branch: `git fetch origin`, then run it in a checkout or worktree at `origin/dev`, for example `git worktree add --detach ../op-dev origin/dev && make -C ../op-dev/deploy/digitalocean push`. Then re-run the failed jobs if the run's commit is still the tip of dev. |
+| 'the deploy kit changed since the check' at Deploy | A `make push` landed between the version check and the deploy. Re-run the failed jobs if the run's commit is still the tip of dev. |
+| 'a deploy is running' from `make push` or `make env-push` | Wait until the deploy has finished (`gh run list ...`, `make status`), then run the target again. |
+| 'already released as <tag>; nothing to build' | That commit is already released. Nothing to do. To redeploy it, the user dispatches with `-f image=<image from the release notes>`. |
+| 'refused: deploys are paused on this server' | Someone ran deploy-hold. Run `make deploy-unhold` only when the user says so. Unholding deploys nothing: afterwards, once the user agrees, dispatch with `-f bump=patch` or wait for the next push. A re-run works only while its commit is still the tip of dev. |
 | Pull fails with 'unauthorized' | The package is private and the server has no valid login; the user makes it public or runs `make ghcr-login`. |
 | Site broken after a deploy | `make deploy-hold`, then `make status` and `make logs SERVICE=seeder`. If deploy.sh printed 'rolled back automatically', production already runs the previous image. Otherwise offer `make rollback` (only safe with backwards compatible migrations) or a restore of the dump `make status` names; never a bare `make deploy`. Use `make rollback` from the laptop, not the GitHub `image` dispatch: the hold blocks every CI deploy. |
 
-Agent targets: `deploy-hold`, `deploy-unhold`, `rollback`, `ci-revoke`, `push`, `test`. Human targets:
+Agent targets: `deploy-hold`, `deploy-unhold`, `rollback`, `ci-revoke`, `push` (only from an up-to-date
+`origin/dev` checkout), `test`. Human targets:
 `ci-setup`, `ci-pause`, `ci-resume` (hand over the exact command). Never read, request or print
 `DEPLOY_SSH_KEY`; never change GitHub environments, secrets, variables, rulesets or package visibility
 yourself. After you change anything in `deploy/digitalocean`, run `make test`.
@@ -100,6 +111,7 @@ yourself. After you change anything in `deploy/digitalocean`, run `make test`.
 | Check tools, logins and names | agent | `make preflight` |
 | Create Droplet, database, firewall | **human** | `make provision SSH_KEY_ID=<id>` |
 | Host name and admin mail | agent | `make configure HOST=<host> ADMIN_MAIL=<mail>`, then tell the user which DNS A record to create |
+| Allow the user's login to build versions | **human** (repository admin) | `gh variable set DEPLOY_DISPATCHERS --repo machinekind/openproject --body '<login>'`. `make ci-setup` creates it later if absent, but a versioned `make image` needs the login in it now |
 | Build and pin the image | agent | `make image BUMP=minor` (or `TAG=<semver>`) |
 | Wait for DNS | agent | `make dns-wait` |
 | Push files, create extensions, start, verify | agent | `make up` (the first start migrates an empty database and takes 5 to 10 minutes) |
@@ -112,6 +124,7 @@ yourself. After you change anything in `deploy/digitalocean`, run `make test`.
 | Mail | agent, then **human** | `make smtp-test SMTP_HOST=<host>`, then `make smtp-configure ...`, then `make deploy` |
 | Prove a restore works | agent | `make restore-drill` |
 | Connect an agent to it | **human** | `make mcp-register` |
+| Continuous deployment | agent, then **human** | README, One-time setup: `make push`, then `make ci-setup` |
 
 ## Things that have gone wrong before
 
@@ -124,7 +137,8 @@ yourself. After you change anything in `deploy/digitalocean`, run `make test`.
   application first, which takes 30 to 90 seconds and prints nothing meanwhile.
 - **`push` does not overwrite a differing server `.env`.** Decide with `env-diff`, then `env-push` or
   `env-pull`. The server owns `OPENPROJECT_IMAGE`: `env-diff` ignores it and `env-push` keeps the server's
-  value.
+  value, refusing when the server has none. Only on a server without any `.env` does `push` install the local
+  one, image included; run `make configure HOST=<host> IMAGE=<current release image>` before that.
 - **DigitalOcean blocks outbound ports 25, 465 and 587.** Use a mail provider that accepts 2525.
 - **Password policy:** 10 or more characters with lowercase, uppercase, digit and special character.
 

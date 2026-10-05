@@ -25,6 +25,11 @@ on:
         type: string
         required: false
         default: ""
+      write_cache:
+        description: Write the BuildKit gha cache. Only workflow_call has this input, so a dispatched build only reads the cache
+        type: boolean
+        required: false
+        default: true
     outputs:
       image:
         description: The pushed image, pinned by digest
@@ -36,8 +41,9 @@ on:
 
 permissions: {}
 
+# github.event_name is the caller's event inside workflow_call, so the call/dispatch distinction comes from write_cache.
 concurrency:
-  group: fork-image-${{ inputs.ref }}
+  group: fork-image-${{ inputs.write_cache && 'call' || 'dispatch' }}-${{ inputs.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -70,9 +76,9 @@ jobs:
             exit 1
           fi
           dispatchers_re='^[A-Za-z0-9-]+(,[A-Za-z0-9-]+)*$'
-          if [[ -n $INPUT_TAG && $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
-            if [[ ! $DEPLOY_DISPATCHERS =~ $dispatchers_re || ",${DEPLOY_DISPATCHERS,,}," != *",${ACTOR,,},"* ]]; then
-              echo "::error::${ACTOR} may not set a version tag. Only the logins in the repository variable DEPLOY_DISPATCHERS may; leave tag empty to tag the short SHA"
+          if [[ $GITHUB_EVENT_NAME == workflow_dispatch ]]; then
+            if [[ -z $ACTOR || ! $DEPLOY_DISPATCHERS =~ $dispatchers_re || ",${DEPLOY_DISPATCHERS,,}," != *",${ACTOR,,},"* ]]; then
+              echo "::error::${ACTOR:-an unknown actor} may not run this workflow by hand. Only the logins in the repository variable DEPLOY_DISPATCHERS may; a repository admin sets it with: gh variable set DEPLOY_DISPATCHERS --repo ${GITHUB_REPOSITORY} --body '<login>,<login>'"
               exit 1
             fi
           fi
@@ -107,7 +113,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: ${{ inputs.write_cache && 'type=gha,mode=max' || '' }}
       - name: Summary
         env:
           IMAGE: ${{ steps.meta.outputs.image }}

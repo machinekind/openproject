@@ -21,24 +21,20 @@ cmd_env_diff() {
   info "OPENPROJECT_IMAGE is not compared; the server owns it. The server runs: $(running_image)"
 }
 
+env_upload() { # env_upload keep-image|initial: hands the local .env to ops/remote/env-merge.sh on the server
+  ip="$(state_get DROPLET_IP)"
+  upload="$(remote "mktemp $REMOTE_DIR/.env.push.XXXXXX" < /dev/null)" || die "could not create a temporary file on the server; the server's .env is unchanged"
+  upload_re='^/srv/openproject/\.env\.push\.[A-Za-z0-9]+$'
+  [[ $upload =~ $upload_re ]] || die "unexpected temporary file on the server: $upload"
+  scp -q $SSH_OPTS "$ENV_FILE" "root@$ip:$upload" || { remote "rm -f $upload" < /dev/null || true; die "copying .env failed; the server's .env is unchanged"; }
+  remote "bash -s -- $1 $upload" < "$KIT_DIR/ops/remote/env-merge.sh" >/dev/null || die "the server's .env was not replaced"
+}
+
 cmd_env_push() {
   require_state DROPLET_IP
   [ -f "$ENV_FILE" ] || die "$ENV_FILE does not exist; nothing to push"
-  server_image="$(remote "grep -E '^OPENPROJECT_IMAGE=' $REMOTE_DIR/.env 2>/dev/null | tail -n 1" < /dev/null || true)"
-  image_line_re='^OPENPROJECT_IMAGE=[A-Za-z0-9._/:@-]+$'
-  [[ $server_image =~ $image_line_re ]] || server_image=""
-  tmp="$(mktemp "$CONF_DIR/.env.push.XXXXXX")"
-  if [ -n "$server_image" ]; then
-    { grep -v -E '^OPENPROJECT_IMAGE=' "$ENV_FILE" || true; printf '%s\n' "$server_image"; } > "$tmp"
-  else
-    cat "$ENV_FILE" > "$tmp"
-  fi
-  chmod 600 "$tmp"
-  scp -q $SSH_OPTS "$tmp" "root@$(state_get DROPLET_IP):$REMOTE_DIR/.env.push" || { rm -f "$tmp"; die "copying .env failed; the server's .env is unchanged"; }
-  rm -f "$tmp"
-  remote "cd $REMOTE_DIR && chmod 600 .env.push && if flock -n .deploy.lock mv -f .env.push .env; then exit 0; else rm -f .env.push; echo 'a deploy is running; try again when it has finished' >&2; exit 1; fi" < /dev/null \
-    || die "the server's .env is unchanged"
-  if [ -n "$server_image" ]; then info ".env pushed; OPENPROJECT_IMAGE kept as the server had it"; else info ".env pushed"; fi
+  env_upload keep-image
+  info ".env pushed; OPENPROJECT_IMAGE kept as the server had it"
 }
 
 cmd_env_pull() {
@@ -51,25 +47,33 @@ cmd_env_pull() {
 cmd_push() {
   require_state DROPLET_IP
   ip="$(state_get DROPLET_IP)"
-  stage="$REMOTE_DIR/.push-staging"
   top="docker-compose.yml Caddyfile bootstrap-db.sh deploy.sh backup.sh"
   info "waiting for first-boot setup"; remote "cloud-init status --wait >/dev/null 2>&1 || true"
-  remote "rm -rf $stage && mkdir -p $stage/ops/rails $stage/ops/remote $REMOTE_DIR/ops/rails $REMOTE_DIR/ops/remote" < /dev/null
+  stage="$(remote "mkdir -p $REMOTE_DIR && mktemp -d $REMOTE_DIR/.push-staging.XXXXXX" < /dev/null)" || die "could not create a staging directory on the server"
+  stage_re='^/srv/openproject/\.push-staging\.[A-Za-z0-9]+$'
+  [[ $stage =~ $stage_re ]] || die "unexpected staging directory on the server: $stage"
+  remote "mkdir -p $stage/ops/rails $stage/ops/remote" < /dev/null
   ( cd "$KIT_DIR" && scp -q $SSH_OPTS $top "root@$ip:$stage/" \
     && scp -q $SSH_OPTS ops/rails/*.rb "root@$ip:$stage/ops/rails/" \
-    && scp -q $SSH_OPTS ops/remote/*.sh "root@$ip:$stage/ops/remote/" )
-  # Renamed into place, never overwritten, so a deploy.sh or ci-deploy.sh that is running keeps reading its old file.
-  remote "cd $stage && chmod +x *.sh ops/remote/*.sh && for f in $top ops/rails/*.rb ops/remote/*.sh; do mv -f \"\$f\" \"$REMOTE_DIR/\$f\"; done && cd $REMOTE_DIR && rm -rf $stage" < /dev/null
+    && scp -q $SSH_OPTS ops/remote/*.sh "root@$ip:$stage/ops/remote/" ) \
+    || { remote "rm -rf $stage" < /dev/null || true; die "copying the stack files failed; the server's files are unchanged"; }
+  remote "bash -s -- $stage $top" < "$KIT_DIR/ops/remote/kit-promote.sh" >/dev/null || die "the server's stack files are unchanged"
   info "stack files pushed"
   if [ ! -f "$ENV_FILE" ]; then
     echo "note: no local $ENV_FILE, so the server's .env was neither compared nor changed."
-  elif remote "[ -f $REMOTE_DIR/.env ]"; then
-    keys="$(env_diff_keys)"
-    if [ -n "$keys" ] && [ "${FORCE_ENV:-0}" != "1" ]; then
-      echo "note: the server's .env differs from the local one in: $(echo $keys). Not overwritten."
-      echo "      'make env-push' makes the local file win, 'make env-pull' makes the server win."
-    elif [ -n "$keys" ]; then cmd_env_push; fi
-  else cmd_env_push; fi
+    return 0
+  fi
+  server_env="$(remote "if [ -e $REMOTE_DIR/.env ]; then echo present; else echo absent; fi" < /dev/null)" || die "could not check the server's .env; it is unchanged"
+  if [ "$server_env" = absent ]; then
+    env_upload initial
+    info "first .env on the server, with OPENPROJECT_IMAGE=$(env_get_public OPENPROJECT_IMAGE) from the local .env"
+    return 0
+  fi
+  keys="$(env_diff_keys)"
+  if [ -n "$keys" ] && [ "${FORCE_ENV:-0}" != "1" ]; then
+    echo "note: the server's .env differs from the local one in: $(echo $keys). Not overwritten."
+    echo "      'make env-push' makes the local file win, 'make env-pull' makes the server win."
+  elif [ -n "$keys" ]; then cmd_env_push; fi
 }
 
 cmd_bootstrap() { require_state DROPLET_IP; remote "cd $REMOTE_DIR && ./bootstrap-db.sh" 2>&1 | redact; }

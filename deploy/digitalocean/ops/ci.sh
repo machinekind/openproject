@@ -65,8 +65,6 @@ cmd_ci_setup() {
   gh variable set DEPLOY_HOST_IP --env production --repo "$REPO" --body "$ip" >/dev/null
   gh variable set DEPLOY_HOST_NAME --env production --repo "$REPO" --body "$host" >/dev/null
   gh variable set DEPLOY_SSH_HOST_KEY --env production --repo "$REPO" --body "$known" >/dev/null
-  info "environment secret DEPLOY_SSH_KEY"
-  gh secret set DEPLOY_SSH_KEY --env production --repo "$REPO" < "$tmp/key" >/dev/null
   if ! gh_get "repos/$REPO/actions/variables/DEPLOY_PAUSED" "$tmp/variable"; then
     info "repository variable DEPLOY_PAUSED=false"
     gh variable set DEPLOY_PAUSED --repo "$REPO" --body false >/dev/null
@@ -79,8 +77,11 @@ cmd_ci_setup() {
     info "repository variable DEPLOY_DISPATCHERS=$login (the logins that may run deploy-production.yml by hand)"
     gh variable set DEPLOY_DISPATCHERS --repo "$REPO" --body "$login" >/dev/null
   fi
+  info "environment secret DEPLOY_SSH_KEY"
+  gh secret set DEPLOY_SSH_KEY --env production --repo "$REPO" < "$tmp/key" >/dev/null
   info "deploy key on the server, limited to ops/remote/ci-deploy.sh"
-  remote "$REMOTE_DIR/ops/remote/ci-key.sh install" < "$tmp/key.pub"
+  remote "$REMOTE_DIR/ops/remote/ci-key.sh install" < "$tmp/key.pub" \
+    || die "installing the deploy key on the server failed. GitHub already holds the new key, so CI deploys fail until you rerun: make -C deploy/digitalocean ci-setup"
   rm -rf "$tmp"
   trap - EXIT
   info "done. The private key existed only in a temporary directory, which is deleted. Rerun this target to rotate the key."

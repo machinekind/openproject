@@ -24,11 +24,21 @@ require_dispatcher() {
   fi
 }
 
-cmd_check_dispatcher() { require_dispatcher; info "$ACTOR may run this workflow by hand"; }
+cmd_gate() {
+  [ "${EVENT_NAME:-}" != workflow_dispatch ] || require_dispatcher
+  if [ "${GITHUB_RUN_ATTEMPT:-1}" != 1 ] && [ -z "${INPUT_IMAGE:-}" ]; then
+    repo="${REPO:?set REPO}"; sha="${SHA:?set SHA}"
+    tip="$(gh api "repos/$repo/git/ref/heads/dev" --jq .object.sha)" && [[ $tip =~ $SHA_RE ]] || die "could not read the tip of dev"
+    [ "$tip" = "$sha" ] || die "dev has moved on to $tip, so this re-run of $sha stops here. Re-runs deploy only the newest commit on dev: let the run for $tip deploy, or dispatch again."
+  fi
+  info "this run may continue"
+}
 
 minor_requested() { # minor_requested REPO SHA BASE_SHA: a pull request merged into dev after BASE_SHA, up to SHA, has the label release:minor
-  labels="$(gh api "repos/$1/commits/$2/pulls" --jq '.[].labels[].name')" || die "could not read the pull requests of $2"
-  if printf '%s\n' "$labels" | grep -x -F 'release:minor' >/dev/null; then return 0; fi
+  if ! git -C "$SRC_DIR" merge-base --is-ancestor "$2" "$3" 2>/dev/null; then
+    labels="$(gh api "repos/$1/commits/$2/pulls" --jq '.[].labels[].name')" || die "could not read the pull requests of $2"
+    if printf '%s\n' "$labels" | grep -x -F 'release:minor' >/dev/null; then return 0; fi
+  fi
   merges="$(gh pr list --repo "$1" --base dev --state merged --label release:minor --limit 100 --json mergeCommit --jq '.[].mergeCommit.oid // empty')" \
     || die "could not list the merged pull requests labelled release:minor"
   for m in $merges; do
@@ -56,6 +66,7 @@ cmd_next_version() {
   base="$(printf '%s\n' "$names" | max_final_semver)"
   [ -n "$base" ] || die "$repo has no final release yet. A person publishes the baseline first: make -C deploy/digitalocean release IMAGE=<running image> TAG=<version> SHA=<its commit>"
   base_sha="$(gh api "repos/$repo/commits/$base" --jq .sha)" || die "could not resolve release $base to a commit"
+  [ "$base_sha" != "$sha" ] || die "$sha is already released as $base; nothing to build. To redeploy it, a login in DEPLOY_DISPATCHERS dispatches with -f image=<the image in the notes of release $base>"
   git -C "$SRC_DIR" merge-base --is-ancestor "$base_sha" "$sha" \
     || die "release $base ($base_sha) is not an ancestor of $sha. Either dev has moved past this run's commit (do not re-run it; the newest run deploys), or $base was built from a commit that is not on dev (merge that commit into dev with a merge commit, then push). A baseline or manual release must be built from a commit on dev."
   if [ "$bump" = patch ] && minor_requested "$repo" "$sha" "$base_sha"; then bump=minor; fi
@@ -126,8 +137,9 @@ cmd_remote_deploy() {
     differ="$(printf '%s\n%s\n' "$remote_kit" "$local_kit" | sort | uniq -u | awk '{ print $2 }' | sort -u | tr '\n' ' ')"
     die "the server's deploy kit differs from this commit in: $differ. Run 'make -C deploy/digitalocean push' from an up-to-date dev checkout, then re-run the failed jobs if this run's commit is still the newest on dev; otherwise the newer run deploys."
   fi
+  kit_sum="$(printf '%s\n' "$local_kit" | sha256sum | cut -c1-64)"
   log="$work/deploy.log"
-  ssh "$@" "deploy $IMAGE" 2>&1 | redact | tee "$log" || die "the deploy failed on the server; see the output above"
+  ssh "$@" "deploy $IMAGE $kit_sum" 2>&1 | redact | tee "$log" || die "the deploy failed on the server; see the output above"
   last="$(tail -n 1 "$log")"
   [ "$last" = "running: $IMAGE" ] || die "the server reports '$last' instead of 'running: $IMAGE'"
   summary "Deployed \`$IMAGE\`"
@@ -140,5 +152,5 @@ cmd_verify() {
   OP_CONF_DIR="$dir" "$KIT_DIR/ops/stack.sh" verify
 }
 
-cmd="${1:?usage: pipeline.sh <check-dispatcher|next-version|resolve-image|remote-deploy|verify>}"; shift || true
-case "$cmd" in check-dispatcher) cmd_check_dispatcher;; next-version) cmd_next_version;; resolve-image) cmd_resolve_image;; remote-deploy) cmd_remote_deploy;; verify) cmd_verify;; *) die "unknown command $cmd";; esac
+cmd="${1:?usage: pipeline.sh <gate|next-version|resolve-image|remote-deploy|verify>}"; shift || true
+case "$cmd" in gate) cmd_gate;; next-version) cmd_next_version;; resolve-image) cmd_resolve_image;; remote-deploy) cmd_remote_deploy;; verify) cmd_verify;; *) die "unknown command $cmd";; esac

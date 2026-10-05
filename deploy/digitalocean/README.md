@@ -35,8 +35,10 @@ Build with the "Build fork image" workflow. It runs from the default branch and 
 gh workflow run fork-image.yml --ref dev -f ref=dev -f tag=1.1.0
 ```
 
-Setting a tag needs your login in `DEPLOY_DISPATCHERS` (see Running it by hand). Without a tag the image is
-tagged with the short SHA.
+Every dispatch of this workflow needs your login in `DEPLOY_DISPATCHERS` (see Running it by hand). Without a
+tag the image is tagged with the short SHA. A dispatched build reads the BuildKit cache but never writes it;
+only the builds that deploy-production.yml starts write it. A dispatched build still gets a token that could
+write the cache, so build only commits that are already on dev, never an unreviewed branch.
 
 **Versioning.** Tags are the fork's own semantic version, `MAJOR.MINOR.PATCH`, optionally with a prerelease
 suffix such as `-rc.1`. Bump MAJOR when the upstream base moves to a new major version or a change breaks
@@ -102,21 +104,31 @@ unreadable. Do not run `provision.sh` with `bash -x`.
 differ between the laptop's and the server's `.env` without showing values; `make push` never overwrites a
 differing server `.env`.
 
-The server owns `OPENPROJECT_IMAGE`: every deploy, CI's included, changes it only in the server's `.env`.
-`make env-diff` does not compare it and prints the image the server runs instead. `make env-push` (and
-`FORCE_ENV=1 make push`) copies every other key and keeps the server's `OPENPROJECT_IMAGE` line; it refuses
-while a deploy is running. `make env-pull` copies the server's file, image included.
+The server owns `OPENPROJECT_IMAGE`: every deploy, CI's included, changes it only in the server's `.env`, so
+the laptop's value goes stale. `make env-diff` does not compare it and prints the image the server runs
+instead. `make env-push` (and `FORCE_ENV=1 make push`) uploads the local file, and the server replaces every
+key except `OPENPROJECT_IMAGE` under the deploy lock. It refuses while a deploy is running, and when the
+server's `.env` is missing or has no image line; it never falls back to the laptop's image. Only `make push`
+to a server without any `.env` (a fresh Droplet) installs the local file as it is, image included, so run
+`make configure IMAGE=<image>` before that. `make env-pull` copies the server's file, image included.
 
 ## Continuous deployment
 
 ### What happens on a push to dev
 
-Workflow `.github/workflows/deploy-production.yml`. Jobs, in order: frontend unit tests, fork specs, Next
+Workflow `.github/workflows/deploy-production.yml`. Jobs, in order: Check the run, frontend unit tests, fork specs, Next
 version, build (`fork-image.yml`), Deploy (environment `production`), Publish release. One run at a time
 per ref. A run that waited in the queue still deploys its commit, because it is an ancestor of dev; the run
 for the newer commit deploys right after. Re-runs and dispatches deploy only the current tip of dev,
-otherwise they stop at 'Resolve the image' before any SSH with 'dev has moved on'. A commit that is no
+otherwise they stop with 'dev has moved on': a re-run of all jobs at 'Check the run', within a minute, and a
+re-run of the failed jobs at 'Resolve the image', before any SSH. A commit that is no
 longer on dev (force push) is never deployed. Re-running an old run therefore never downgrades production.
+
+A re-run or a dispatch by a login in `DEPLOY_DISPATCHERS` joins the same queue and replaces a run that is
+waiting there. Re-run only while the run's commit is the tip of dev. Afterwards check with
+`gh run list --workflow deploy-production.yml --repo machinekind/openproject` that the newest commit still
+deploys, and dispatch again if it does not. A dispatch by any other login runs in a concurrency group of its
+own, so it never replaces a waiting run.
 
 Every merge by a person deploys. GitHub gives no environment secrets to a run whose actor is a bot, so a
 push to dev made by a bot (for example a merge performed by Dependabot or by an app's auto-merge) fails at
@@ -142,6 +154,8 @@ gh workflow run deploy-production.yml --repo machinekind/openproject --ref dev -
 The run refuses to start while the repository has no final release. It also refuses when the latest release's
 commit is not an ancestor of the run's commit. That happens to a stale run, and to a release built by hand
 from a commit that is not on dev; merge that commit into dev with a merge commit (not squash or rebase).
+A run whose commit is the latest release's commit stops with 'already released as <tag>; nothing to build',
+for example a re-run of a successful run. To redeploy that release, dispatch with `-f image=` from its notes.
 
 ### What the server allows
 
@@ -151,45 +165,60 @@ The deploy key is one line in `/root/.ssh/authorized_keys`:
 restrict,command="/srv/openproject/ops/remote/ci-deploy.sh" ssh-ed25519 <key> github-actions-deploy
 ```
 
-The key can do three things: `deploy <ghcr.io/machinekind/openproject:<tag>@sha256:<digest>>`, `status` and
-`version`. No shell, no file copy, no port forwarding. CI never copies files to the server. Before each
-deploy, the runner compares the hashes of `deploy.sh`, `docker-compose.yml`, `Caddyfile` and
+The key can do three things: `deploy <ghcr.io/machinekind/openproject:<tag>@sha256:<digest>> <kit sha256>`,
+`status` and `version`. No shell, no file copy, no port forwarding. CI never copies files to the server.
+Before each deploy, the runner compares the hashes of `deploy.sh`, `docker-compose.yml`, `Caddyfile` and
 `ops/remote/ci-deploy.sh` on the server with the commit. When they differ, it stops and asks for `make push`
-(agent) followed by re-running the job.
+(agent) followed by re-running the job. The runner then sends the sha256 of those four hash lines with the
+deploy. deploy.sh computes it again after taking its lock and refuses with 'the deploy kit changed since the
+check' when a `make push` landed in between. A laptop `make deploy` runs deploy.sh directly, without this check. `make push` stages the files in a new temporary directory on the
+server and moves them into place under the same lock; it refuses while a deploy runs.
 
 ### What deploy.sh does
 
-- Takes a lock (`another deploy is running`).
+- Takes a lock (`another deploy is running`). A CI deploy then checks the kit checksum (see above).
 - Pulls before `.env` changes, so a failed pull changes nothing. An image that is already on the server, by
   digest, is not pulled, so a rollback works while GHCR or Docker Hub is down.
 - Dumps the database to `/var/backups/openproject/db-predeploy-<tag>-<UTC time>-<digest prefix>.dump`, one
   file per attempt. It takes about a minute.
-- Reads a fingerprint of the schema: the `schema_migrations` versions plus the columns and indexes of schema
-  `public`.
-- Records the image `.env` named before this attempt in `.deploy/previous-image` (the target of
-  `make rollback`) when the image changes. A failed image never becomes the previous one.
+- When the image changes, writes the image `.env` names before this attempt to
+  `.deploy/previous-image.pending`.
 - Runs the seeder migration, then waits for health for up to 10 minutes.
 
-After every healthy deploy, deploy.sh records the fingerprint and the running image in
-`.deploy/healthy-schema`.
+After a healthy deploy, the pending image becomes `.deploy/previous-image`, the target of `make rollback`.
+deploy.sh also records a fingerprint of the schema and the running image in `.deploy/healthy-schema`. The
+fingerprint comes from `pg_catalog` for schema `public`: every column with its full type, `NOT NULL` and
+default, the kind of every relation, every constraint, every index with its validity, triggers, views, functions,
+enum labels in order, and the `schema_migrations` versions. It leaves out OIDs and column positions, so a
+restore into a new cluster keeps the fingerprint.
 
-On failure, `.env` goes back to the previous image:
+On failure:
 
-- If the current fingerprint equals the recorded one for that image, deploy.sh starts it again, waits for
-  health and prints `rolled back automatically to <image>: no migration had run`. The deploy still counts as
-  failed.
-- Otherwise (schema changed, fingerprint unreadable, no record yet, or a record for another image) nothing
-  is restarted. `.deploy/last-dump` gets this attempt's dump path unless it already exists (`make status`
-  shows it), and deploy.sh prints the two choices: roll forward with a fixed image, or restore that dump and
-  then `make rollback`.
+- Without an image switch (no argument, or the image `.env` already names), `.env` stays as it is and
+  nothing is rolled back. deploy.sh says so. Fix the cause, often a value in `.env`, and run the same deploy
+  again.
+- After a switch, `.env` goes back to the old image. deploy.sh starts the old image again only when this
+  attempt's seeder ran the new image to exit code 0, so every migration finished and none is half done, and
+  the fingerprint equals the one recorded for the old image. It prints
+  `rolled back automatically to <image>: no migration had run`. `.deploy/previous-image` keeps its earlier
+  value, and the deploy still counts as failed. Seed rows the new seeder added stay.
+- In every other case (seeder failed or did not run, schema changed, fingerprint unreadable, no record yet,
+  or a record for another image) nothing is restarted. `.deploy/previous-image` becomes the old image, which
+  matches the pre-deploy dump. `.deploy/last-dump` gets this attempt's dump path unless it already exists
+  (`make status` shows it), and deploy.sh prints the two choices: roll forward with a fixed image, or restore
+  that dump and then `make rollback`, which deploys the old image.
+- If the automatic restart does not become healthy either, `.deploy/previous-image` becomes the old image too,
+  and deploy.sh points at the logs.
+- If this attempt's seeder is still running (a long migration), deploy.sh says so and restarts nothing. Do
+  not stop it, restore a dump or deploy again until `docker compose ps -a seeder` shows it exited.
 
 A failure that changed the schema leaves the record stale, so later failures restart nothing until a healthy
-deploy, or a restore of that dump, brings the schema back. The first deploy after this kit version has no
-record yet and never restarts automatically.
+deploy, or a restore of that dump, brings the schema back. The first deploy after a kit version that changes
+the fingerprint query has no matching record and never restarts automatically.
 
-After a healthy deploy, images other than the current and the previous one are removed, and only the 3 newest
-pre-deploy dumps are kept; a failed attempt removes nothing. The nightly backup cleanup also removes dumps
-older than 7 days. The last line is `running: <image>`, and the runner checks it. Afterwards the runner runs
+After every deploy, healthy or failed, deploy.sh removes this repository's images except the running one, the
+old one, the previous image and any image a container uses. It keeps the 3 newest pre-deploy dumps plus the
+file `.deploy/last-dump` names. The nightly backup cleanup also removes dumps older than 7 days. The last line is `running: <image>`, and the runner checks it. Afterwards the runner runs
 the checks of `make verify` from outside, and only then publishes the release.
 
 ### One-time setup
@@ -198,7 +227,7 @@ the checks of `make verify` from outside, and only then publishes the release.
 |---|---|---|
 | Host key known | **human** | `ssh root@<droplet ip> true`; accept only if the fingerprint matches `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` run in the Droplet's Recovery Console (control panel, Access) |
 | Make the package public: package settings page of `ghcr.io/machinekind/openproject`, Change visibility, Public. Then drop the Droplet's token | **human**, agent | `make ghcr-logout` |
-| Put the current kit on the server | agent | `make push` from an up-to-date dev |
+| Put the current kit on the server | agent | `make push` from a checkout of `origin/dev`: `git fetch origin`, then a checkout or worktree at `origin/dev` |
 | Create the GitHub side and install the key | **human** | `make ci-setup` |
 | Create the label | **human** | `gh label create release:minor --repo machinekind/openproject --color 0E8A16 --description "Deploy as a MINOR release; required when a merge adds migrations"` |
 | Baseline release; the human decides the number | **human** | `make release IMAGE=<running image from make status> TAG=<baseline, e.g. 1.0.0> SHA=<its commit>`; SHA must be a commit on dev |
@@ -208,22 +237,24 @@ the checks of `make verify` from outside, and only then publishes the release.
 to confirm that they match the Recovery Console. It reads the environment `production` first and leaves it
 alone when it already uses custom deployment branch policies. Otherwise it switches it to custom policies
 and keeps reviewers, wait timer, self-review and admin bypass. It removes every deployment policy other than
-branch dev, then verifies the mode and that branch dev is the only policy. It sets the variables
-`DEPLOY_HOST_IP`, `DEPLOY_HOST_NAME` and `DEPLOY_SSH_HOST_KEY` (taken from the operator's known_hosts, not
-from a scan), and sets the secret `DEPLOY_SSH_KEY` last. Any GitHub error other than 'not found' stops it
-at that step; rerunning is safe. It creates `DEPLOY_PAUSED=false` and `DEPLOY_DISPATCHERS=<your login>` only when
-they are absent, and warns when `DEPLOY_DISPATCHERS` is malformed. The private key lives only in a temporary
-directory that is deleted. Rerunning `make ci-setup` rotates the key.
+branch dev, then verifies the mode and that branch dev is the only policy. Then, in this order: the
+environment variables `DEPLOY_HOST_IP`, `DEPLOY_HOST_NAME` and `DEPLOY_SSH_HOST_KEY` (taken from the
+operator's known_hosts, not from a scan); the repository variables `DEPLOY_PAUSED=false` and
+`DEPLOY_DISPATCHERS=<your login>`, only when they are absent, with a warning when `DEPLOY_DISPATCHERS` is
+malformed; the secret `DEPLOY_SSH_KEY`; and last the public key on the server. Between the last two steps CI
+deploys fail at SSH, so if the server step fails, rerun `make ci-setup`. Any GitHub error other than 'not
+found' stops it at that step; rerunning is safe. The private key lives only in a temporary directory that is
+deleted. Rerunning `make ci-setup` rotates the key.
 
 ### Running it by hand
 
 `gh workflow run deploy-production.yml` works only for the logins in the repository variable
 `DEPLOY_DISPATCHERS`: GitHub logins separated by commas, without spaces, compared case-insensitively.
 Repository admins edit it. Missing, empty or malformed means no one may dispatch. A refused dispatch shows a
-failed 'Check the dispatcher' job. When the variable is well-formed, Deploy is then skipped without entering
-the production environment. With a malformed value Deploy may start, but it stops at 'Resolve the image'
-before any SSH: the check in `pipeline.sh` is the authoritative one. The same list gates version tags on
-`fork-image.yml` dispatches, so `make image` needs your login in it. Push runs are unaffected. A repository
+failed 'Check the run' job and runs in a concurrency group of its own, so it never replaces a waiting
+deploy. When the variable is well-formed, Deploy is then skipped without entering the production environment. With a malformed value Deploy may start, but it stops at 'Resolve the image'
+before any SSH: the check in `pipeline.sh` is the authoritative one. The same list gates every dispatch of
+`fork-image.yml`, so `make image` needs your login in it. Push runs are unaffected. A repository
 admin adds a login with
 `gh variable set DEPLOY_DISPATCHERS --repo machinekind/openproject --body '<login>,<login>'`.
 
@@ -241,6 +272,12 @@ notes.
 Neither blocks `make deploy` or `make rollback` from a laptop. A manual `make deploy` is replaced by the next
 CI run unless deploys are held or paused until the change is on dev.
 
+Lifting a hold or pause deploys nothing by itself: a run refused meanwhile has failed, and nothing re-runs it.
+After `make deploy-unhold` or `make ci-resume`, a login in `DEPLOY_DISPATCHERS` runs
+`gh workflow run deploy-production.yml --repo machinekind/openproject --ref dev -f bump=patch`, or the next
+push to dev deploys. Re-running the refused run works only while its commit is still the tip of dev. Confirm
+with `make status`.
+
 Pause before a risky upstream sync and resume after reading the migration list.
 
 ### Rolling back
@@ -250,11 +287,14 @@ In an incident:
 1. `make -C deploy/digitalocean deploy-hold`, so no CI run deploys over you.
 2. `make status` shows the running image, the previous image and, after a failed deploy that may have
    migrated, the restore point in `.deploy/last-dump`.
-3. `make -C deploy/digitalocean rollback` from the laptop. It deploys `/srv/openproject/.deploy/previous-image`,
-   which is the image `.env` named before the last switch, also when that switch failed. It bypasses the
-   GitHub queue and both pauses, and it keeps running on the server if the SSH connection drops (its output
-   is also appended to `/srv/openproject/.deploy/deploy.log`). Running it twice switches back again.
-4. `make deploy-unhold` once dev holds the fix.
+3. `make -C deploy/digitalocean rollback` from the laptop. It deploys `/srv/openproject/.deploy/previous-image`:
+   the image before the last successful switch. After a failed switch that was not rolled back
+   automatically, it is the image that switch replaced, which matches `.deploy/last-dump`. After an automatic
+   rollback it keeps its earlier value. It bypasses the GitHub queue and both pauses, and it keeps running on
+   the server if the SSH connection drops (its output is also appended to
+   `/srv/openproject/.deploy/deploy.log`). Running it twice switches back again.
+4. `make deploy-unhold` once dev holds the fix, then deploy the fix as in Pausing (a dispatch with
+   `bump=patch`, or the next push). Unholding alone deploys nothing.
 
 Rolling back is valid only when the newer migrations are backwards compatible; otherwise see Restoring.
 
@@ -330,11 +370,12 @@ the server if the SSH connection drops and appends its output to `/srv/openproje
 Failures:
 
 - A failed pull or pre-deploy dump changes nothing.
-- A failure before any migration ran (the schema is still the one the previous image last ran healthy on) starts the previous image
-  again automatically and still reports the deploy as failed.
-- A failure after a migration ran leaves web and worker stopped (failed migration, Caddy answers 502) or the
-  new containers running (health timeout), with `.env` back on the previous image and the dump to restore
-  in `.deploy/last-dump`.
+- A failed deploy without an image switch says so and changes nothing; fix the cause and run it again.
+- A failure after the seeder finished without migrating (the schema is still the one the previous image last
+  ran healthy on) starts the previous image again automatically and still reports the deploy as failed.
+- A failure after a migration ran, or with a failed seeder, leaves web and worker stopped (failed migration,
+  Caddy answers 502) or the new containers running (health timeout), with `.env` back on the previous image
+  and the dump to restore in `.deploy/last-dump`.
 
 In the last case a person decides between rolling forward with a fixed image, `make rollback` (only with
 backwards compatible migrations) and restoring `.deploy/last-dump` (see Restoring). Even a successful deploy
@@ -388,12 +429,18 @@ seeder would apply the same migrations to the restored database again.
 **Whole server.** Run `make ci-pause` first: a Droplet backup taken before `make deploy-hold` comes back
 without the hold, and a fresh Droplet has none. Restore a Droplet backup, or create a fresh Droplet with
 `cloud-init.yml` and `--tag-name openproject`; the tag gives it database access and the firewall. The
-Droplet holds nothing that cannot be recreated except the attachments volume. Then:
+Droplet holds nothing that cannot be recreated except the attachments volume. Find the image production ran
+last: the latest release's notes show it (`gh release view --repo machinekind/openproject`), and so does the
+last `make status` output you have. Then:
 
-1. `make adopt` (a fresh Droplet has a new IP) and `make push`.
-2. Pin the new host key as in One-time setup, then rerun `make ci-setup`; it publishes the new IP and host
-   key to GitHub and installs the deploy key.
-3. `make deploy-hold` again if you still need it, then `make ci-resume`.
+1. `make adopt` (a fresh Droplet has a new IP).
+2. Pin the new host key as in One-time setup, before any other target connects.
+3. A fresh Droplet: `make configure HOST=<host> IMAGE=<that image>`, then `make up`. `make push` alone starts
+   nothing, and the laptop's `OPENPROJECT_IMAGE` is stale unless you set it here. A restored Droplet backup
+   starts the image it ran when the backup was taken: `make push`, then `make deploy IMAGE=<that image>` if CI
+   deployed after the backup.
+4. Rerun `make ci-setup`; it publishes the new IP and host key to GitHub and installs the deploy key.
+5. `make deploy-hold` again if it was set before, then `make ci-resume`.
 
 ## Getting back in
 

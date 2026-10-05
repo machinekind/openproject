@@ -61,9 +61,10 @@ if [ "\$last" = version ]; then
 fi
 case "\$last" in
   "deploy "*)
+    img="\${last#deploy }"
     echo pulling
     echo 'DATABASE_URL=postgres://u:topsecret@h/db'
-    echo "running: \${STUB_RUNNING:-\${last#deploy }}"
+    echo "running: \${STUB_RUNNING:-\${img%% *}}"
     exit \${STUB_SSH_RC:-0} ;;
 esac
 STUB
@@ -135,6 +136,10 @@ nonzero "u3 labelled merge before the release ignored" "$rc"
 contains "u3 message" "$err" "release:minor"
 nv SHA="$B" STUB_MINOR_MERGES="$(printf '0%.0s' $(seq 1 40))\nnot-a-sha"
 contains "u4 unknown merge commits ignored" "$gho" "tag=1.2.4"
+nv SHA="$B" STUB_BASE_SHA="$B" STUB_LABELS='release:minor'
+nonzero "v1 released commit refused" "$rc"
+contains "v1 message" "$err" "already released as 1.2.3"
+check "v1 no tag" "$gho" ""
 
 C64="$(printf 'c%.0s' $(seq 1 64))"
 V="ghcr.io/machinekind/openproject:1.2.4@sha256:$C64"
@@ -195,13 +200,26 @@ for bad in "ghcr.io/other/openproject:1.2.4@sha256:$C64" "ghcr.io/machinekind/op
   nonzero "k rejects $(printf '%s' "$bad" | head -n 1 | cut -c1-50)" "$rc"
 done
 
-cd_() { run EVENT_NAME=workflow_dispatch ACTOR=alice DEPLOY_DISPATCHERS='bob,alice' "$@" bash "$P" check-dispatcher; }
-cd_
+gt() { run EVENT_NAME=workflow_dispatch ACTOR=alice DEPLOY_DISPATCHERS='bob,alice' SHA="$B" STUB_DEV_TIP="$B" "$@" bash "$P" gate; }
+gt
 check "k1 listed login allowed" "$rc" 0
-cd_ ACTOR=mallory
+gt ACTOR=mallory
 nonzero "k2 unlisted login refused" "$rc"
-cd_ DEPLOY_DISPATCHERS='bob alice'
+gt DEPLOY_DISPATCHERS='bob alice'
 nonzero "k3 malformed list refused" "$rc"
+gt EVENT_NAME=push ACTOR=mallory STUB_DEV_TIP="$C"
+check "k4 first push attempt passes without a tip check" "$rc" 0
+gt EVENT_NAME=push ACTOR=mallory GITHUB_RUN_ATTEMPT=2
+check "k5 re-run at the tip passes" "$rc" 0
+gt EVENT_NAME=push ACTOR=mallory GITHUB_RUN_ATTEMPT=2 STUB_DEV_TIP="$C"
+nonzero "k6 re-run behind the tip refused" "$rc"
+contains "k6 message" "$err" "dev has moved on"
+gt GITHUB_RUN_ATTEMPT=2 STUB_DEV_TIP="$C"
+nonzero "k7 re-run of a build dispatch behind the tip refused" "$rc"
+gt GITHUB_RUN_ATTEMPT=2 STUB_DEV_TIP="$C" INPUT_IMAGE="$V"
+check "k8 re-run of an image dispatch skips the tip check" "$rc" 0
+gt GITHUB_RUN_ATTEMPT=2 ACTOR=mallory INPUT_IMAGE="$V"
+nonzero "k9 re-run by an unlisted login refused" "$rc"
 
 KEY=$'-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----'
 HK='203.0.113.10 ssh-ed25519 AAAAhost'
@@ -215,10 +233,12 @@ check "l key via agent" "$(cat "$t/added")" "$KEY"
 case "$out$err" in *topsecret*) not_ok "l output leaks secret" ;; *) ok "l output redacted" ;; esac
 contains "l output shows deploy" "$out" "running: $V"
 if [ -e "$t/rt/deploy-ssh" ]; then not_ok "l work dir removed"; else ok "l work dir removed"; fi
+KIT="$(cd "$here" && sha256sum deploy.sh docker-compose.yml Caddyfile ops/remote/ci-deploy.sh | sha256sum | cut -c1-64)"
+check "l deploy sends the kit checksum" "$(tail -n 1 "$t/ssh_args" | awk '{ print $(NF-2), $(NF-1), $NF }')" "deploy $V $KIT"
 rd STUB_VERSION_OUT='0000  deploy.sh'
 nonzero "m drift" "$rc"
 contains "m message" "$err" "make -C deploy/digitalocean push"
-case "$(cat "$t/ssh_args")" in *"deploy $V") not_ok "m deploy not attempted" ;; *) ok "m deploy not attempted" ;; esac
+case "$(cat "$t/ssh_args")" in *"deploy $V"*) not_ok "m deploy not attempted" ;; *) ok "m deploy not attempted" ;; esac
 rd STUB_RUNNING=other
 nonzero "n wrong running line" "$rc"
 contains "n message" "$err" "instead of 'running:"

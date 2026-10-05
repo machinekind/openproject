@@ -14,6 +14,7 @@ check() {
 
 FP1=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 FP2=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+Z="ghcr.io/machinekind/openproject:0.9.0@sha256:$(printf 'f%.0s' $(seq 1 64))"
 OLD="ghcr.io/machinekind/openproject:1.0.0@sha256:$(printf 'a%.0s' $(seq 1 64))"
 NEW="ghcr.io/machinekind/openproject:1.1.0@sha256:$(printf 'b%.0s' $(seq 1 64))"
 
@@ -28,10 +29,13 @@ setup() {
   echo "$OLD" > "$STUB/running"
   echo sha256:old > "$STUB/running_id"
   printf '%s sha256:old\n' "$OLD" > "$STUB/local"
+  printf '%s|exited|0|2020-01-01T00:00:00.000000000Z\n' "$OLD" > "$STUB/seeder"
   printf '#!/bin/sh\nexit 0\n' > "$t/bin/sleep"
   cat > "$t/bin/docker" <<'STUBEOF'
 #!/usr/bin/env bash
 case "$*" in
+  "compose ps -a -q seeder") if [ -f "$STUB/seeder" ]; then echo seeder1; fi ;;
+  "inspect --format {{.Config.Image}}|{{.State.Status}}|{{.State.ExitCode}}|{{.State.StartedAt}} "*) cat "$STUB/seeder" ;;
   "compose ps -q web") if [ -f "$STUB/web_id" ]; then cat "$STUB/web_id"; fi ;;
   "inspect --format {{.Config.Image}} "*) cat "$STUB/running" ;;
   "inspect --format {{.Image}} "*) cat "$STUB/running_id" ;;
@@ -46,9 +50,11 @@ case "$*" in
   "compose up -d --remove-orphans")
     img="$(grep '^OPENPROJECT_IMAGE=' ./.env | cut -d= -f2-)"
     echo "up $img" >> "$STUB/calls"
+    [ -n "${STUB_SEEDER_UNTOUCHED:-}" ] || printf '%s|%s|%s|%s\n' "$img" "${STUB_SEEDER_STATUS:-exited}" "${STUB_SEEDER_RC:-0}" "${STUB_SEEDER_STARTED:-$(date -u +%Y-%m-%dT%H:%M:%S.000000000Z)}" > "$STUB/seeder"
     if [ "${STUB_UP_RC:-0}" -ne 0 ] && { [ -z "${STUB_UP_FAIL_IMAGE:-}" ] || [ "$img" = "$STUB_UP_FAIL_IMAGE" ]; }; then exit "$STUB_UP_RC"; fi
     printf '%s\n' "$img" > "$STUB/running"
-    echo sha256:new > "$STUB/running_id"
+    id="$(awk -v r="$img" '$1 == r { print $2 }' "$STUB/local")"
+    echo "${id:-sha256:new}" > "$STUB/running_id"
     echo web1 > "$STUB/web_id" ;;
   "run "*psql*)
     cat > /dev/null
@@ -61,6 +67,8 @@ case "$*" in
     echo run >> "$STUB/calls"
     echo DUMPDATA
     exit "${STUB_RUN_RC:-0}" ;;
+  "container ls -a -q") if [ -f "$STUB/containers" ]; then cat "$STUB/containers"; fi ;;
+  "container inspect --format {{.Image}} "*) if [ -f "$STUB/container_images" ]; then cat "$STUB/container_images"; fi ;;
   "image ls "*) if [ -f "$STUB/images" ]; then cat "$STUB/images"; fi ;;
   "image rm -f "*) echo "rm $4" >> "$STUB/calls" ;;
   "image prune -f") echo prune >> "$STUB/calls" ;;
@@ -72,7 +80,7 @@ STUBEOF
   export PATH
 }
 
-cleanup() { rm -rf "$t"; unset STUB_PULL_RC STUB_UP_RC STUB_UP_FAIL_IMAGE STUB_HEALTH STUB_UNHEALTHY_IMAGE STUB_RUN_RC; }
+cleanup() { rm -rf "$t"; unset STUB_PULL_RC STUB_UP_RC STUB_UP_FAIL_IMAGE STUB_HEALTH STUB_UNHEALTHY_IMAGE STUB_RUN_RC STUB_SEEDER_RC STUB_SEEDER_STATUS STUB_SEEDER_UNTOUCHED STUB_SEEDER_STARTED EXPECTED_KIT_SHA256; }
 
 ORIG_PATH="$PATH"
 run_deploy() { (cd "$t/stack" && ./deploy.sh "$@") > "$t/out" 2> "$t/err"; rc=$?; }
@@ -120,6 +128,7 @@ check "3 older image removed" calls_has "rm sha256:older"
 check "3 previous image kept" calls_lacks "rm sha256:old"
 check "3 current image kept" calls_lacks "rm sha256:new"
 check "3 other repository kept" calls_lacks "rm sha256:pg"
+check "3 no pending previous image" [ ! -e "$t/stack/.deploy/previous-image.pending" ]
 cleanup
 
 setup
@@ -136,6 +145,7 @@ check "4 unknown schema restarts nothing" [ "$(up_count)" -eq 1 ]
 check "4 stderr says nothing was restarted" err_has "nothing was restarted"
 check "4 last-dump names this attempt's dump" file_has "$t/stack/.deploy/last-dump" "$BACKUP_DIR/db-predeploy-1.1.0-"
 check "4 stderr names the dump" err_has "$(cat "$t/stack/.deploy/last-dump" 2>/dev/null || echo missing-last-dump)"
+check "4 no pending previous image" [ ! -e "$t/stack/.deploy/previous-image.pending" ]
 cleanup
 
 setup
@@ -206,8 +216,15 @@ healthy_schema() { mkdir -p "$t/stack/.deploy"; printf '%s\n' "$1" > "$t/stack/.
 
 setup
 mkdir -p "$BACKUP_DIR"
-for n in 1 2 3 4; do echo x > "$BACKUP_DIR/db-predeploy-old$n-202001010000.dump"; done
+for n in 1 2 3 4; do
+  f="$BACKUP_DIR/db-predeploy-old$n-202001010000.dump"
+  echo x > "$f"
+  touch -d "2020-01-0$n" "$f"
+done
 healthy_schema "$FP1 $OLD"
+echo "$Z" > "$t/stack/.deploy/previous-image"
+echo sha256:z > "$t/stack/.deploy/previous-image-id"
+printf '%s\n' 'ghcr.io/machinekind/openproject sha256:new' 'ghcr.io/machinekind/openproject sha256:old' 'ghcr.io/machinekind/openproject sha256:z' 'ghcr.io/machinekind/openproject sha256:older' > "$STUB/images"
 printf '%s\n%s\n' "$FP1" "$FP1" > "$STUB/fingerprints"
 export STUB_UNHEALTHY_IMAGE="$NEW"
 run_deploy "$NEW"
@@ -218,7 +235,15 @@ check "11 old image runs" [ "$(cat "$STUB/running")" = "$OLD" ]
 check "11 .env names old image" env_has "OPENPROJECT_IMAGE=$OLD"
 check "11 stderr says rolled back automatically" err_has "rolled back automatically to $OLD: no migration had run"
 check "11 no last-dump" [ ! -e "$t/stack/.deploy/last-dump" ]
-check "11 failed attempt prunes no dump" count_files "$BACKUP_DIR/db-predeploy-*.dump" 5
+check "11 failed attempt keeps the 3 newest dumps" count_files "$BACKUP_DIR/db-predeploy-*.dump" 3
+check "11 this attempt's dump kept" count_files "$BACKUP_DIR/db-predeploy-1.1.0-*.dump" 1
+check "11 previous-image unchanged" [ "$(cat "$t/stack/.deploy/previous-image")" = "$Z" ]
+check "11 previous-image-id unchanged" [ "$(cat "$t/stack/.deploy/previous-image-id")" = sha256:z ]
+check "11 no pending previous image" [ ! -e "$t/stack/.deploy/previous-image.pending" ]
+check "11 failed image removed" calls_has "rm sha256:new"
+check "11 older image removed" calls_has "rm sha256:older"
+check "11 running old image kept" calls_lacks "rm sha256:old"
+check "11 previous image kept" calls_lacks "rm sha256:z"
 cleanup
 
 setup
@@ -337,6 +362,142 @@ printf '%s\n' "$FP2" > "$STUB/fingerprints"
 export STUB_UP_RC=1
 run_deploy "$NEW"
 check "24 failed deploy leaves healthy-schema unchanged" cmp -s "$t/hs.before" "$t/stack/.deploy/healthy-schema"
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+printf '%s\n' "$FP1" > "$STUB/fingerprints"
+export STUB_UP_RC=1 STUB_UP_FAIL_IMAGE="$NEW" STUB_SEEDER_RC=1
+run_deploy "$NEW"
+check "25 failed seeder exits 1" [ "$rc" -eq 1 ]
+check "25 failed seeder restarts nothing" [ "$(up_count)" -eq 1 ]
+check "25 schema not read" calls_lacks psql
+check "25 stderr names the seeder" err_has "did not run $NEW to exit code 0"
+check "25 last-dump recorded" file_has "$t/stack/.deploy/last-dump" "$BACKUP_DIR/db-predeploy-1.1.0-"
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+printf '%s\n' "$FP1" > "$STUB/fingerprints"
+export STUB_UP_RC=1 STUB_SEEDER_UNTOUCHED=1
+run_deploy "$NEW"
+check "26 seeder still on the old image restarts nothing" [ "$(up_count)" -eq 1 ]
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+printf '%s\n' "$FP1" > "$STUB/fingerprints"
+export STUB_UNHEALTHY_IMAGE="$NEW" STUB_SEEDER_STARTED=2000-01-01T00:00:00.000000000Z
+run_deploy "$NEW"
+check "27 seeder from before this attempt restarts nothing" [ "$(up_count)" -eq 1 ]
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+echo "$Z" > "$t/stack/.deploy/previous-image"
+printf '%s\n' "$FP1" > "$STUB/fingerprints"
+export STUB_HEALTH=unhealthy
+run_deploy "$NEW"
+check "28 unhealthy restart exits 1" [ "$rc" -eq 1 ]
+check "28 restart attempted" [ "$(up_count)" -eq 2 ]
+check "28 stderr says restart failed" err_has "did not become healthy either"
+check "28 previous-image is old" [ "$(cat "$t/stack/.deploy/previous-image")" = "$OLD" ]
+check "28 no restore advice" bash -c '! grep -qF "make rollback, which deploys" "$1"' _ "$t/err"
+check "28 no pending previous image" [ ! -e "$t/stack/.deploy/previous-image.pending" ]
+cleanup
+
+setup
+export STUB_HEALTH=unhealthy
+run_deploy
+check "29 failed deploy without argument exits 1" [ "$rc" -eq 1 ]
+check "29 says no switch happened" err_has "No image switch happened"
+check "29 no rollback advice" bash -c '! grep -qF "make rollback" "$1"' _ "$t/err"
+check "29 no last-dump" [ ! -e "$t/stack/.deploy/last-dump" ]
+check "29 .env unchanged" env_has "OPENPROJECT_IMAGE=$OLD"
+check "29 no previous-image" [ ! -e "$t/stack/.deploy/previous-image" ]
+cleanup
+
+setup
+export STUB_HEALTH=unhealthy
+run_deploy "$OLD"
+check "30 failed redeploy of the same image exits 1" [ "$rc" -eq 1 ]
+check "30 says no switch happened" err_has "No image switch happened"
+check "30 no last-dump" [ ! -e "$t/stack/.deploy/last-dump" ]
+check "30 no previous-image" [ ! -e "$t/stack/.deploy/previous-image" ]
+cleanup
+
+setup
+mkdir -p "$BACKUP_DIR" "$t/stack/.deploy"
+for n in 1 2 3 4; do
+  f="$BACKUP_DIR/db-predeploy-old$n-202001010000.dump"
+  echo x > "$f"
+  touch -d "2020-01-0$n" "$f"
+done
+echo "$BACKUP_DIR/db-predeploy-old1-202001010000.dump" > "$t/stack/.deploy/last-dump"
+export STUB_UP_RC=1
+run_deploy "$NEW"
+check "31 failure without restart exits 1" [ "$rc" -eq 1 ]
+check "31 last-dump unchanged" [ "$(cat "$t/stack/.deploy/last-dump")" = "$BACKUP_DIR/db-predeploy-old1-202001010000.dump" ]
+check "31 last-dump target kept" [ -e "$BACKUP_DIR/db-predeploy-old1-202001010000.dump" ]
+check "31 fourth newest dump removed" [ ! -e "$BACKUP_DIR/db-predeploy-old2-202001010000.dump" ]
+check "31 four dumps remain" count_files "$BACKUP_DIR/db-predeploy-*.dump" 4
+cleanup
+
+setup
+mkdir -p "$t/stack/.deploy"
+echo sha256:z > "$t/stack/.deploy/previous-image-id"
+printf '%s\n' 'ghcr.io/machinekind/openproject sha256:new' 'ghcr.io/machinekind/openproject sha256:old' 'ghcr.io/machinekind/openproject sha256:z' 'ghcr.io/machinekind/openproject sha256:older' > "$STUB/images"
+echo c1 > "$STUB/containers"
+echo sha256:new > "$STUB/container_images"
+export STUB_UP_RC=1
+run_deploy "$NEW"
+check "32 failure without restart exits 1" [ "$rc" -eq 1 ]
+check "32 previous-image-id is the old id" [ "$(cat "$t/stack/.deploy/previous-image-id")" = sha256:old ]
+check "32 older image removed" calls_has "rm sha256:older"
+check "32 image before old removed" calls_has "rm sha256:z"
+check "32 image a container uses kept" calls_lacks "rm sha256:new"
+check "32 old image kept" calls_lacks "rm sha256:old"
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+printf '%s\n' "$FP1" > "$STUB/fingerprints"
+export STUB_HEALTH=unhealthy STUB_SEEDER_STATUS=running
+run_deploy "$NEW"
+check "36 running seeder exits 1" [ "$rc" -eq 1 ]
+check "36 running seeder restarts nothing" [ "$(up_count)" -eq 1 ]
+check "36 schema not read" calls_lacks psql
+check "36 stderr says the seeder is still running" err_has "seeder of this attempt is still running"
+check "36 .env names old again" env_has "OPENPROJECT_IMAGE=$OLD"
+cleanup
+
+kit_files() { mkdir -p "$t/stack/ops/remote"; echo compose > "$t/stack/docker-compose.yml"; echo caddy > "$t/stack/Caddyfile"; echo ci > "$t/stack/ops/remote/ci-deploy.sh"; }
+kit_sum() { (cd "$t/stack" && sha256sum deploy.sh docker-compose.yml Caddyfile ops/remote/ci-deploy.sh | sha256sum | cut -c1-64); }
+
+setup
+kit_files
+EXPECTED_KIT_SHA256="$(kit_sum)"
+export EXPECTED_KIT_SHA256
+run_deploy "$NEW"
+check "33 matching kit checksum deploys" [ "$rc" -eq 0 ]
+cleanup
+
+setup
+kit_files
+EXPECTED_KIT_SHA256="$(printf 'e%.0s' $(seq 1 64))"
+export EXPECTED_KIT_SHA256
+run_deploy "$NEW"
+check "34 changed kit exits 1" [ "$rc" -eq 1 ]
+check "34 stderr says the kit changed" err_has "kit changed since the check"
+check "34 no docker calls" [ ! -e "$STUB/calls" ]
+check "34 .env unchanged" env_has "OPENPROJECT_IMAGE=$OLD"
+cleanup
+
+setup
+export EXPECTED_KIT_SHA256=xyz
+run_deploy "$NEW"
+check "35 malformed kit checksum exits 2" [ "$rc" -eq 2 ]
+check "35 no docker calls" [ ! -e "$STUB/calls" ]
 cleanup
 
 if [ "$failures" -eq 0 ]; then

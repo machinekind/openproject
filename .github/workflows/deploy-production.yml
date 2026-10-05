@@ -18,14 +18,15 @@ on:
 permissions: {}
 
 # One run at a time per ref, so each version is computed after the previous release exists; a newer push replaces a waiting run.
+# A dispatch by a login outside DEPLOY_DISPATCHERS gets a group of its own, so it cannot replace a waiting deploy.
 concurrency:
-  group: production-deploy-${{ github.ref }}
+  group: ${{ (github.event_name != 'workflow_dispatch' || contains(format(',{0},', vars.DEPLOY_DISPATCHERS), format(',{0},', github.triggering_actor))) && format('production-deploy-{0}', github.ref) || format('refused-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
-  dispatcher:
-    name: Check the dispatcher
-    if: github.repository == 'machinekind/openproject' && github.event_name == 'workflow_dispatch'
+  gate:
+    name: Check the run
+    if: github.repository == 'machinekind/openproject'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -35,20 +36,26 @@ jobs:
         with:
           sparse-checkout: deploy/digitalocean
           persist-credentials: false
-      - name: Check the dispatcher
+      - name: Check the dispatcher, and the tip of dev for a re-run
         env:
+          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_IMAGE: ${{ inputs.image }}
           ACTOR: ${{ github.triggering_actor }}
           DEPLOY_DISPATCHERS: ${{ vars.DEPLOY_DISPATCHERS }}
-        run: deploy/digitalocean/ops/pipeline.sh check-dispatcher
+        run: deploy/digitalocean/ops/pipeline.sh gate
 
   frontend-tests:
+    needs: gate
     if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
     permissions:
       contents: read
     uses: ./.github/workflows/test-frontend-unit.yml # zizmor: ignore[self-repository] actionlint 1.7.12 rejects the $/ form
 
   fork-specs:
+    needs: gate
     if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
     permissions:
       contents: read
@@ -56,6 +63,7 @@ jobs:
 
   version:
     name: Next version
+    needs: gate
     if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -96,9 +104,10 @@ jobs:
 
   deploy:
     name: Deploy
-    needs: [frontend-tests, fork-specs, build]
+    needs: [gate, frontend-tests, fork-specs, build]
     if: >-
       !cancelled()
+      && needs.gate.result == 'success'
       && github.repository == 'machinekind/openproject'
       && github.ref == 'refs/heads/dev'
       && vars.DEPLOY_PAUSED != 'true'

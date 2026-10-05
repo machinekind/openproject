@@ -35,13 +35,13 @@ up: ## [agent] First start: push files, create extensions, deploy, verify
 	@$(OPS)/stack.sh up
 
 # --- run ----------------------------------------------------------------------------------------
-push: ## [agent] Copy the stack files to the server. Never overwrites a differing .env unless FORCE_ENV=1
+push: ## [agent] Copy the stack files to the server; refuses while a deploy runs. Installs the local .env only on a server without one; never overwrites a differing .env unless FORCE_ENV=1
 	@$(OPS)/stack.sh push
 deploy: ## [agent] Pull and restart, then publish a release for the running image. With IMAGE=... switch to that image first
 	@$(OPS)/stack.sh deploy
 release: ## [agent] Publish a GitHub release for an image (default: the pinned one); backfills older versions without marking them latest, with notes generated from merged PRs. [TAG=] [SHA=] [PREV=] [REF=] [UPSTREAM=] [IMAGE=] [NOTES=] [DEPLOYED=]
 	@$(OPS)/infra.sh release
-rollback: ## [agent] Deploy .deploy/previous-image: the image .env named before the last switch, also after a failed one. Only if the newer migrations are backwards compatible
+rollback: ## [agent] Deploy .deploy/previous-image: the image before the last successful switch, or the one a failed switch replaced when it was not rolled back automatically. Only if the newer migrations are backwards compatible
 	@$(OPS)/stack.sh rollback
 verify: ## [agent] Check the live site from the outside: TLS, redirects, closed endpoints, open ports
 	@$(OPS)/stack.sh verify
@@ -53,13 +53,13 @@ logs: ## [agent] Redacted container logs. [SERVICE=web] [TAIL=60]
 	@$(OPS)/stack.sh logs
 env-diff: ## [agent] Names of .env keys that differ between laptop and server, except OPENPROJECT_IMAGE. Values are never shown
 	@$(OPS)/stack.sh env-diff
-env-push: ## [agent] Make the local .env win, except OPENPROJECT_IMAGE, which stays as the server has it
+env-push: ## [agent] Make the local .env win, except OPENPROJECT_IMAGE, which stays as the server has it. Refuses while a deploy runs or when the server's .env has no image
 	@$(OPS)/stack.sh env-push
 env-pull: ## [agent] Make the server's .env win (keeps a local .env.bak)
 	@$(OPS)/stack.sh env-pull
 test: ## [agent] Shellcheck and the stub tests of this kit, in Docker with Ubuntu 24.04 tools like the server
 	@docker run --rm -v "$(CURDIR):/kit" -w /kit $(SHELLCHECK_IMAGE) -x --severity=warning *.sh ops/*.sh ops/remote/*.sh test/*.sh
-	@for t in deploy_test ci_deploy_test ci_key_test; do docker run --rm -v "$(CURDIR):/kit" -w /kit $(TEST_IMAGE) bash test/$$t.sh || exit 1; done
+	@for t in deploy_test ci_deploy_test ci_key_test remote_ops_test; do docker run --rm -v "$(CURDIR):/kit" -w /kit $(TEST_IMAGE) bash test/$$t.sh || exit 1; done
 	@docker run --rm -v "$(CURDIR):/kit" -w /kit $(GIT_TEST_IMAGE) bash test/pipeline_test.sh
 
 # --- continuous deployment ----------------------------------------------------------------------

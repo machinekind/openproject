@@ -9,6 +9,7 @@ contains() { case "$2" in *"$3"*) ok "$1" ;; *) not_ok "$1 (missing '$3' in '$2'
 
 D="$(printf '0123456789abcdef%.0s' 1 2 3 4)"
 VALID="ghcr.io/machinekind/openproject:1.2.3@sha256:$D"
+K="$(printf 'abcdef0123456789%.0s' 1 2 3 4)"
 
 setup() {
   t="$(mktemp -d)"
@@ -19,6 +20,7 @@ setup() {
   cat > "$t/srv/deploy.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "deploy.sh $*"
+echo "kit=${EXPECTED_KIT_SHA256:-}"
 echo "running: $1"
 exit ${STUB_DEPLOY_RC:-0}
 STUB
@@ -51,12 +53,19 @@ refused_cases=(
   "deploy ghcr.io/machinekind/openproject:1.2.3@sha256:${D:1}"
   "deploy ghcr.io/machinekind/openproject:1.2.3@sha256:${D^^}"
   "deploy $VALID;id"
+  "deploy $VALID"
   "deploy $VALID extra"
   $'deploy '"$VALID"$'\nid'
   "shell"
   "rm -rf /"
   "status now"
   "version x"
+  "deploy $VALID ${K^^}"
+  "deploy $VALID ${K:1}"
+  "deploy $VALID $K extra"
+  "deploy $K"
+  "version $K"
+  "status $K"
 )
 for c in "${refused_cases[@]}"; do
   export SSH_ORIGINAL_COMMAND="$c"
@@ -65,10 +74,11 @@ for c in "${refused_cases[@]}"; do
   case "$out" in *deploy.sh*) not_ok "stub not run for '${c//$'\n'/\\n}'" ;; *) ok "stub not run for '${c//$'\n'/\\n}'" ;; esac
 done
 
-export SSH_ORIGINAL_COMMAND="deploy $VALID"
+export SSH_ORIGINAL_COMMAND="deploy $VALID $K"
 run
 check "deploy exits 0" "$rc" 0
-contains "deploy passes image" "$out" "deploy.sh $VALID"
+contains "deploy passes the image alone" "$out" "deploy.sh $VALID"$'\n'
+contains "deploy passes the kit checksum" "$out" "kit=$K"
 check "deploy last line" "$(echo "$out" | tail -n 1)" "running: $VALID"
 contains "deploy log" "$(cat "$t/srv/.deploy/ci-deploy.log")" "running: $VALID"
 
