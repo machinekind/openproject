@@ -3,20 +3,42 @@
 . "$(dirname "$0")/common.sh"
 
 # Names of the keys whose values differ between the local and the server's .env. Values are never shown.
+# OPENPROJECT_IMAGE is left out: deploys, CI's included, change it only on the server.
 env_diff_keys() {
   [ -f "$ENV_FILE" ] || die "$ENV_FILE does not exist; nothing to compare"
   remote "cd $REMOTE_DIR && [ -f .env ] && grep -E '^[A-Z_]+=' .env | while IFS= read -r l; do k=\${l%%=*}; printf '%s %s\n' \"\$k\" \"\$(printf '%s' \"\${l#*=}\" | sha256sum | cut -c1-16)\"; done || true" | sort > "$CONF_DIR/.remote-keys"
   grep -E '^[A-Z_]+=' "$ENV_FILE" | while IFS= read -r l; do k=${l%%=*}; printf '%s %s\n' "$k" "$(printf '%s' "${l#*=}" | shasum -a 256 | cut -c1-16)"; done | sort > "$CONF_DIR/.local-keys"
-  { comm -3 "$CONF_DIR/.local-keys" "$CONF_DIR/.remote-keys" || true; } | awk '{print $1}' | sort -u
+  { comm -3 "$CONF_DIR/.local-keys" "$CONF_DIR/.remote-keys" || true; } | awk '$1 != "OPENPROJECT_IMAGE" { print $1 }' | sort -u
   rm -f "$CONF_DIR/.remote-keys" "$CONF_DIR/.local-keys"
 }
 
-cmd_env_diff() { require_state DROPLET_IP; keys="$(env_diff_keys)"; if [ -z "$keys" ]; then info "local and server .env are identical"; else info "keys that differ (values not shown):"; echo "$keys" | sed 's/^/  /'; fi; }
+running_image() { remote "cd $REMOTE_DIR && docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q web)" < /dev/null 2>/dev/null || true; }
+
+cmd_env_diff() {
+  require_state DROPLET_IP
+  keys="$(env_diff_keys)"
+  if [ -z "$keys" ]; then info "local and server .env are identical, apart from OPENPROJECT_IMAGE"; else info "keys that differ (values not shown):"; echo "$keys" | sed 's/^/  /'; fi
+  info "OPENPROJECT_IMAGE is not compared; the server owns it. The server runs: $(running_image)"
+}
 
 cmd_env_push() {
   require_state DROPLET_IP
-  scp -q $SSH_OPTS "$ENV_FILE" "root@$(state_get DROPLET_IP):$REMOTE_DIR/.env"
-  remote "chmod 600 $REMOTE_DIR/.env"; info ".env pushed"
+  [ -f "$ENV_FILE" ] || die "$ENV_FILE does not exist; nothing to push"
+  server_image="$(remote "grep -E '^OPENPROJECT_IMAGE=' $REMOTE_DIR/.env 2>/dev/null | tail -n 1" < /dev/null || true)"
+  image_line_re='^OPENPROJECT_IMAGE=[A-Za-z0-9._/:@-]+$'
+  [[ $server_image =~ $image_line_re ]] || server_image=""
+  tmp="$(mktemp "$CONF_DIR/.env.push.XXXXXX")"
+  if [ -n "$server_image" ]; then
+    { grep -v -E '^OPENPROJECT_IMAGE=' "$ENV_FILE" || true; printf '%s\n' "$server_image"; } > "$tmp"
+  else
+    cat "$ENV_FILE" > "$tmp"
+  fi
+  chmod 600 "$tmp"
+  scp -q $SSH_OPTS "$tmp" "root@$(state_get DROPLET_IP):$REMOTE_DIR/.env.push" || { rm -f "$tmp"; die "copying .env failed; the server's .env is unchanged"; }
+  rm -f "$tmp"
+  remote "cd $REMOTE_DIR && chmod 600 .env.push && if flock -n .deploy.lock mv -f .env.push .env; then exit 0; else rm -f .env.push; echo 'a deploy is running; try again when it has finished' >&2; exit 1; fi" < /dev/null \
+    || die "the server's .env is unchanged"
+  if [ -n "$server_image" ]; then info ".env pushed; OPENPROJECT_IMAGE kept as the server had it"; else info ".env pushed"; fi
 }
 
 cmd_env_pull() {
@@ -28,12 +50,16 @@ cmd_env_pull() {
 
 cmd_push() {
   require_state DROPLET_IP
+  ip="$(state_get DROPLET_IP)"
+  stage="$REMOTE_DIR/.push-staging"
+  top="docker-compose.yml Caddyfile bootstrap-db.sh deploy.sh backup.sh"
   info "waiting for first-boot setup"; remote "cloud-init status --wait >/dev/null 2>&1 || true"
-  remote "mkdir -p $REMOTE_DIR/ops/rails $REMOTE_DIR/ops/remote"
-  ( cd "$KIT_DIR" && scp -q $SSH_OPTS docker-compose.yml Caddyfile bootstrap-db.sh deploy.sh backup.sh "root@$(state_get DROPLET_IP):$REMOTE_DIR/" \
-    && scp -q $SSH_OPTS ops/rails/*.rb "root@$(state_get DROPLET_IP):$REMOTE_DIR/ops/rails/" \
-    && scp -q $SSH_OPTS ops/remote/*.sh "root@$(state_get DROPLET_IP):$REMOTE_DIR/ops/remote/" )
-  remote "chmod +x $REMOTE_DIR/*.sh $REMOTE_DIR/ops/remote/*.sh"
+  remote "rm -rf $stage && mkdir -p $stage/ops/rails $stage/ops/remote $REMOTE_DIR/ops/rails $REMOTE_DIR/ops/remote" < /dev/null
+  ( cd "$KIT_DIR" && scp -q $SSH_OPTS $top "root@$ip:$stage/" \
+    && scp -q $SSH_OPTS ops/rails/*.rb "root@$ip:$stage/ops/rails/" \
+    && scp -q $SSH_OPTS ops/remote/*.sh "root@$ip:$stage/ops/remote/" )
+  # Renamed into place, never overwritten, so a deploy.sh or ci-deploy.sh that is running keeps reading its old file.
+  remote "cd $stage && chmod +x *.sh ops/remote/*.sh && for f in $top ops/rails/*.rb ops/remote/*.sh; do mv -f \"\$f\" \"$REMOTE_DIR/\$f\"; done && cd $REMOTE_DIR && rm -rf $stage" < /dev/null
   info "stack files pushed"
   if [ ! -f "$ENV_FILE" ]; then
     echo "note: no local $ENV_FILE, so the server's .env was neither compared nor changed."
@@ -55,13 +81,13 @@ cmd_deploy() {
     case "$IMAGE" in *[!A-Za-z0-9._:/@-]*) die "IMAGE may contain only letters, digits and . _ : / @ -";; esac
     arg=" $IMAGE"
   fi
-  remote "cd $REMOTE_DIR && ./deploy.sh$arg" 2>&1 | redact
+  remote "set -o pipefail; umask 077; cd $REMOTE_DIR && mkdir -p .deploy && ./deploy.sh$arg 2>&1 | tee -p -a .deploy/deploy.log" < /dev/null 2>&1 | redact
   if [ -n "${IMAGE:-}" ]; then
     state_set IMAGE "$IMAGE"
     [ ! -f "$ENV_FILE" ] || env_set OPENPROJECT_IMAGE "$IMAGE"
     info "image set to $IMAGE"
   fi
-  running="$(remote "cd $REMOTE_DIR && docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q web)" 2>/dev/null)" || running=""
+  running="$(running_image)"
   if [ -z "$running" ]; then info "running image unknown; no release published. Run: make release IMAGE=..."; return 0; fi
   IMAGE="$running" "$KIT_DIR/ops/infra.sh" release || info "release not published; run: make release IMAGE=$running"
 }
@@ -77,7 +103,7 @@ cmd_rollback() {
 
 cmd_status() {
   require_state DROPLET_IP
-  remote "cd $REMOTE_DIR && echo '-- containers' && docker compose ps --format 'table {{.Service}}\t{{.Status}}' && echo '-- host' && uptime && free -m | sed -n '1,3p' && df -h / | tail -n 1 && echo '-- last backup' && { tail -n 1 /var/log/openproject-backup.log 2>/dev/null || echo 'no backup log yet'; } && { ls /etc/cron.d/openproject-backup >/dev/null 2>&1 && echo 'nightly backup: installed' || echo 'nightly backup: NOT installed'; } && echo '-- image' && docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q web)" 2>&1 | redact
+  remote "cd $REMOTE_DIR && echo '-- containers' && docker compose ps --format 'table {{.Service}}\t{{.Status}}' && echo '-- host' && uptime && free -m | sed -n '1,3p' && df -h / | tail -n 1 && echo '-- last backup' && { tail -n 1 /var/log/openproject-backup.log 2>/dev/null || echo 'no backup log yet'; } && { ls /etc/cron.d/openproject-backup >/dev/null 2>&1 && echo 'nightly backup: installed' || echo 'nightly backup: NOT installed'; } && echo '-- previous image (make rollback)' && { cat .deploy/previous-image 2>/dev/null || echo none; } && echo '-- restore point of an unresolved failed deploy' && { cat .deploy/last-dump 2>/dev/null || echo none; } && echo '-- image' && docker inspect --format '{{.Config.Image}}' \$(docker compose ps -q web)" 2>&1 | redact
 }
 
 cmd_summary() { require_state DROPLET_IP; rails_run summary.rb 2>&1 | redact; }

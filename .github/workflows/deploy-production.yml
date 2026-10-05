@@ -6,23 +6,42 @@ on:
   workflow_dispatch:
     inputs:
       image:
-        description: Redeploy this image instead of building, ghcr.io/machinekind/openproject:<tag>@sha256:<digest>. Skips tests, build and release
+        description: Redeploy this image instead of building, ghcr.io/machinekind/openproject:<tag>@sha256:<digest>. Skips tests, build and release. Only logins in the repository variable DEPLOY_DISPATCHERS may dispatch
         required: false
         default: ""
       bump:
-        description: Version bump for a build
+        description: Version bump for a build. MAJOR is only ever chosen here
         type: choice
-        options: [patch, minor]
+        options: [patch, minor, major]
         default: patch
 
 permissions: {}
 
-# One run at a time, so each version is computed after the previous release exists; a newer push replaces a waiting run.
+# One run at a time per ref, so each version is computed after the previous release exists; a newer push replaces a waiting run.
 concurrency:
-  group: production-deploy
+  group: production-deploy-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  dispatcher:
+    name: Check the dispatcher
+    if: github.repository == 'machinekind/openproject' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: deploy/digitalocean
+          persist-credentials: false
+      - name: Check the dispatcher
+        env:
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.triggering_actor }}
+          DEPLOY_DISPATCHERS: ${{ vars.DEPLOY_DISPATCHERS }}
+        run: deploy/digitalocean/ops/pipeline.sh check-dispatcher
+
   frontend-tests:
     if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
     permissions:
@@ -59,6 +78,9 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           BUMP: ${{ inputs.bump }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.triggering_actor }}
+          DEPLOY_DISPATCHERS: ${{ vars.DEPLOY_DISPATCHERS }}
         run: deploy/digitalocean/ops/pipeline.sh next-version
 
   build:
@@ -80,6 +102,7 @@ jobs:
       && github.repository == 'machinekind/openproject'
       && github.ref == 'refs/heads/dev'
       && vars.DEPLOY_PAUSED != 'true'
+      && (github.event_name != 'workflow_dispatch' || contains(format(',{0},', vars.DEPLOY_DISPATCHERS), format(',{0},', github.triggering_actor)))
       && (inputs.image || (needs.frontend-tests.result == 'success' && needs.fork-specs.result == 'success' && needs.build.result == 'success'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -100,6 +123,12 @@ jobs:
           INPUT_IMAGE: ${{ inputs.image }}
           BUILT_IMAGE: ${{ needs.build.outputs.image }}
           DEPLOY_HOST_NAME: ${{ vars.DEPLOY_HOST_NAME }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.triggering_actor }}
+          DEPLOY_DISPATCHERS: ${{ vars.DEPLOY_DISPATCHERS }}
         run: deploy/digitalocean/ops/pipeline.sh resolve-image
       - name: Deploy over the forced command
         env:
@@ -117,7 +146,7 @@ jobs:
   release:
     name: Publish release
     needs: [version, deploy]
-    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image && vars.DEPLOY_PAUSED != 'true'
+    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

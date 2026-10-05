@@ -12,6 +12,8 @@ check() {
   if "$@"; then ok "$name"; else not_ok "$name"; fi
 }
 
+FP1=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+FP2=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 OLD="ghcr.io/machinekind/openproject:1.0.0@sha256:$(printf 'a%.0s' $(seq 1 64))"
 NEW="ghcr.io/machinekind/openproject:1.1.0@sha256:$(printf 'b%.0s' $(seq 1 64))"
 
@@ -25,6 +27,7 @@ setup() {
   echo web1 > "$STUB/web_id"
   echo "$OLD" > "$STUB/running"
   echo sha256:old > "$STUB/running_id"
+  printf '%s sha256:old\n' "$OLD" > "$STUB/local"
   printf '#!/bin/sh\nexit 0\n' > "$t/bin/sleep"
   cat > "$t/bin/docker" <<'STUBEOF'
 #!/usr/bin/env bash
@@ -32,16 +35,28 @@ case "$*" in
   "compose ps -q web") if [ -f "$STUB/web_id" ]; then cat "$STUB/web_id"; fi ;;
   "inspect --format {{.Config.Image}} "*) cat "$STUB/running" ;;
   "inspect --format {{.Image}} "*) cat "$STUB/running_id" ;;
-  "inspect --format {{.State.Health.Status}} "*) echo "${STUB_HEALTH:-healthy}" ;;
+  "inspect --format {{.State.Health.Status}} "*)
+    if [ -n "${STUB_UNHEALTHY_IMAGE:-}" ] && [ "$(cat "$STUB/running")" = "$STUB_UNHEALTHY_IMAGE" ]; then echo unhealthy; else echo "${STUB_HEALTH:-healthy}"; fi ;;
+  "image inspect --format {{.Id}} "*)
+    ref="${!#}"
+    awk -v r="$ref" '$1 == r { print $2; found = 1 } END { exit !found }' "$STUB/local" 2>/dev/null || { echo "Error: No such image: $ref" >&2; exit 1; } ;;
   "compose pull")
     echo "pull OPENPROJECT_IMAGE=${OPENPROJECT_IMAGE:-}" >> "$STUB/calls"
     exit "${STUB_PULL_RC:-0}" ;;
   "compose up -d --remove-orphans")
-    echo up >> "$STUB/calls"
-    if [ "${STUB_UP_RC:-0}" -ne 0 ]; then exit "$STUB_UP_RC"; fi
-    grep '^OPENPROJECT_IMAGE=' ./.env | cut -d= -f2- > "$STUB/running"
+    img="$(grep '^OPENPROJECT_IMAGE=' ./.env | cut -d= -f2-)"
+    echo "up $img" >> "$STUB/calls"
+    if [ "${STUB_UP_RC:-0}" -ne 0 ] && { [ -z "${STUB_UP_FAIL_IMAGE:-}" ] || [ "$img" = "$STUB_UP_FAIL_IMAGE" ]; }; then exit "$STUB_UP_RC"; fi
+    printf '%s\n' "$img" > "$STUB/running"
     echo sha256:new > "$STUB/running_id"
     echo web1 > "$STUB/web_id" ;;
+  "run "*psql*)
+    cat > /dev/null
+    echo psql >> "$STUB/calls"
+    [ -s "$STUB/fingerprints" ] || exit 2
+    head -n 1 "$STUB/fingerprints"
+    tail -n +2 "$STUB/fingerprints" > "$STUB/fingerprints.tmp"
+    mv "$STUB/fingerprints.tmp" "$STUB/fingerprints" ;;
   "run "*)
     echo run >> "$STUB/calls"
     echo DUMPDATA
@@ -57,13 +72,15 @@ STUBEOF
   export PATH
 }
 
-cleanup() { rm -rf "$t"; unset STUB_PULL_RC STUB_UP_RC STUB_HEALTH STUB_RUN_RC; }
+cleanup() { rm -rf "$t"; unset STUB_PULL_RC STUB_UP_RC STUB_UP_FAIL_IMAGE STUB_HEALTH STUB_UNHEALTHY_IMAGE STUB_RUN_RC; }
 
 ORIG_PATH="$PATH"
 run_deploy() { (cd "$t/stack" && ./deploy.sh "$@") > "$t/out" 2> "$t/err"; rc=$?; }
 env_has() { grep -qxF "$1" "$t/stack/.env"; }
 calls_has() { grep -qxF "$1" "$t/stub/calls" 2>/dev/null; }
 calls_lacks() { ! calls_has "$1"; }
+no_up() { ! grep -q '^up' "$t/stub/calls" 2>/dev/null; }
+up_count() { grep -c '^up' "$t/stub/calls" 2>/dev/null; }
 no_dumps() { [ -z "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]; }
 err_has() { grep -qF "$1" "$t/err"; }
 file_has() { grep -qF "$2" "$1" 2>/dev/null; }
@@ -82,7 +99,7 @@ run_deploy "$NEW"
 check "2 pull failure exits non-zero" [ "$rc" -ne 0 ]
 check "2 .env keeps old image" env_has "OPENPROJECT_IMAGE=$OLD"
 check "2 pull used the new image" calls_has "pull OPENPROJECT_IMAGE=$NEW"
-check "2 no up" calls_lacks up
+check "2 no up" no_up
 check "2 no dump written" no_dumps
 cleanup
 
@@ -112,8 +129,13 @@ check "4 up failure exits 1" [ "$rc" -eq 1 ]
 check "4 .env restored" env_has "OPENPROJECT_IMAGE=$OLD"
 check "4 stderr says deploy failed" err_has "deploy failed:"
 check "4 stderr warns against argument-less deploy" err_has "Do not run deploy.sh without an argument"
-check "4 failed deploy is not recorded as previous" [ ! -e "$t/stack/.deploy/previous-image" ]
-check "4 no previous id recorded" [ ! -e "$t/stack/.deploy/previous-image-id" ]
+check "4 previous-image is the image before the attempt" file_has "$t/stack/.deploy/previous-image" "$OLD"
+check "4 failed image is not recorded as previous" file_lacks "$t/stack/.deploy/previous-image" "$NEW"
+check "4 previous id is the old image id" file_has "$t/stack/.deploy/previous-image-id" sha256:old
+check "4 unknown schema restarts nothing" [ "$(up_count)" -eq 1 ]
+check "4 stderr says nothing was restarted" err_has "nothing was restarted"
+check "4 last-dump names this attempt's dump" file_has "$t/stack/.deploy/last-dump" "$BACKUP_DIR/db-predeploy-1.1.0-"
+check "4 stderr names the dump" err_has "$(cat "$t/stack/.deploy/last-dump" 2>/dev/null || echo missing-last-dump)"
 cleanup
 
 setup
@@ -123,8 +145,9 @@ check "5 unhealthy exits 1" [ "$rc" -eq 1 ]
 check "5 .env restored" env_has "OPENPROJECT_IMAGE=$OLD"
 check "5 stderr says not healthy" err_has "did not become healthy"
 check "5 stderr warns against argument-less deploy" err_has "Do not run deploy.sh without an argument"
-check "5 failed deploy is not recorded as previous" [ ! -e "$t/stack/.deploy/previous-image" ]
-check "5 no previous id recorded" [ ! -e "$t/stack/.deploy/previous-image-id" ]
+check "5 previous-image is the image before the attempt" file_has "$t/stack/.deploy/previous-image" "$OLD"
+check "5 failed image is not recorded as previous" file_lacks "$t/stack/.deploy/previous-image" "$NEW"
+check "5 unknown schema restarts nothing" [ "$(up_count)" -eq 1 ]
 cleanup
 
 setup
@@ -164,7 +187,7 @@ run_deploy "$NEW"
 check "9 missing DATABASE_URL exits 1" [ "$rc" -eq 1 ]
 check "9 stderr says dump failed" err_has "pre-deploy database dump failed"
 check "9 .env still names old image" env_has "OPENPROJECT_IMAGE=$OLD"
-check "9 no up" calls_lacks up
+check "9 no up" no_up
 cleanup
 
 setup
@@ -177,6 +200,143 @@ run_deploy "$NEW"
 check "10 retry after failure succeeds" [ "$rc" -eq 0 ]
 check "10 previous-image is the pre-deploy .env image" file_has "$t/stack/.deploy/previous-image" "$OLD"
 check "10 running image is not recorded as previous" file_lacks "$t/stack/.deploy/previous-image" "$NEW"
+cleanup
+
+healthy_schema() { mkdir -p "$t/stack/.deploy"; printf '%s\n' "$1" > "$t/stack/.deploy/healthy-schema"; }
+
+setup
+mkdir -p "$BACKUP_DIR"
+for n in 1 2 3 4; do echo x > "$BACKUP_DIR/db-predeploy-old$n-202001010000.dump"; done
+healthy_schema "$FP1 $OLD"
+printf '%s\n%s\n' "$FP1" "$FP1" > "$STUB/fingerprints"
+export STUB_UNHEALTHY_IMAGE="$NEW"
+run_deploy "$NEW"
+check "11 unhealthy on the healthy schema exits 1" [ "$rc" -eq 1 ]
+check "11 up ran twice" [ "$(up_count)" -eq 2 ]
+check "11 old image started again" calls_has "up $OLD"
+check "11 old image runs" [ "$(cat "$STUB/running")" = "$OLD" ]
+check "11 .env names old image" env_has "OPENPROJECT_IMAGE=$OLD"
+check "11 stderr says rolled back automatically" err_has "rolled back automatically to $OLD: no migration had run"
+check "11 no last-dump" [ ! -e "$t/stack/.deploy/last-dump" ]
+check "11 failed attempt prunes no dump" count_files "$BACKUP_DIR/db-predeploy-*.dump" 5
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+printf '%s\n' "$FP1" > "$STUB/fingerprints"
+export STUB_UP_RC=1 STUB_UP_FAIL_IMAGE="$NEW"
+run_deploy "$NEW"
+check "12 up failure on the healthy schema exits 1" [ "$rc" -eq 1 ]
+check "12 old image started again" calls_has "up $OLD"
+check "12 stderr says rolled back automatically" err_has "rolled back automatically to $OLD"
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+printf '%s\n' "$FP2" > "$STUB/fingerprints"
+export STUB_UP_RC=1
+run_deploy "$NEW"
+check "13 changed schema exits 1" [ "$rc" -eq 1 ]
+check "13 old image not restarted" [ "$(up_count)" -eq 1 ]
+check "13 stderr says nothing was restarted" err_has "nothing was restarted"
+check "13 last-dump names this attempt's dump" file_has "$t/stack/.deploy/last-dump" "$BACKUP_DIR/db-predeploy-1.1.0-"
+check "13 stderr names make rollback target" err_has "make rollback, which deploys $OLD"
+cleanup
+
+setup
+healthy_schema "$FP1 someother:image"
+printf '%s\n' "$FP1" > "$STUB/fingerprints"
+export STUB_UP_RC=1
+run_deploy "$NEW"
+check "14 schema last healthy for another image exits 1" [ "$rc" -eq 1 ]
+check "14 old image not restarted" [ "$(up_count)" -eq 1 ]
+cleanup
+
+setup
+printf '%s\n' "$FP1" > "$STUB/fingerprints"
+run_deploy "$NEW"
+check "15 healthy deploy exits 0" [ "$rc" -eq 0 ]
+check "15 healthy-schema names fingerprint and new image" [ "$(cat "$t/stack/.deploy/healthy-schema")" = "$FP1 $NEW" ]
+check "15 no last-dump" [ ! -e "$t/stack/.deploy/last-dump" ]
+cleanup
+
+setup
+run_deploy "$NEW"
+check "16 dump name has UTC seconds and short digest" count_files "$BACKUP_DIR/db-predeploy-1.1.0-*T*Z-bbbbbbbbbbbb.dump" 1
+check "16 stdout names the dump path" grep -qF "pre-deploy dump: $BACKUP_DIR/db-predeploy-1.1.0-" "$t/out"
+cleanup
+
+setup
+printf '%s sha256:new\n' "$NEW" >> "$STUB/local"
+run_deploy "$NEW"
+check "17 local image exits 0" [ "$rc" -eq 0 ]
+check "17 local image is not pulled" calls_lacks "pull OPENPROJECT_IMAGE=$NEW"
+check "17 stdout says not pulling" grep -qF "not pulling" "$t/out"
+cleanup
+
+setup
+: > "$STUB/local"
+run_deploy "$NEW"
+check "18 success exits 0" [ "$rc" -eq 0 ]
+check "18 previous-image is old" file_has "$t/stack/.deploy/previous-image" "$OLD"
+check "18 no previous id when old image is not local" [ ! -e "$t/stack/.deploy/previous-image-id" ]
+cleanup
+
+setup
+run_deploy "ghcr.io/machinekind/openproject:1.1.0@sha256:../../x"
+check "19 digest cannot leave the backup directory" count_files "$BACKUP_DIR/db-predeploy-untagged-*-_______.dump" 1
+cleanup
+
+setup
+printf '%s\n' "$FP1" > "$STUB/fingerprints"
+export STUB_UP_RC=1
+run_deploy "$NEW"
+check "20 no healthy-schema file exits 1" [ "$rc" -eq 1 ]
+check "20 old image not restarted" [ "$(up_count)" -eq 1 ]
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+: > "$STUB/fingerprints"
+export STUB_UP_RC=1
+run_deploy "$NEW"
+check "21 psql failure exits 1" [ "$rc" -eq 1 ]
+check "21 old image not restarted" [ "$(up_count)" -eq 1 ]
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+printf '%s\n' ERROR > "$STUB/fingerprints"
+export STUB_UP_RC=1
+run_deploy "$NEW"
+check "22 malformed fingerprint exits 1" [ "$rc" -eq 1 ]
+check "22 old image not restarted" [ "$(up_count)" -eq 1 ]
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+echo /backups/earlier.dump > "$t/stack/.deploy/last-dump"
+printf '%s\n%s\n' "$FP1" "$FP1" > "$STUB/fingerprints"
+export STUB_UNHEALTHY_IMAGE="$NEW"
+run_deploy "$NEW"
+check "23 restart still happens with an earlier last-dump" calls_has "up $OLD"
+check "23 last-dump is unchanged" [ "$(cat "$t/stack/.deploy/last-dump")" = /backups/earlier.dump ]
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+run_deploy "$NEW"
+check "24 healthy deploy with unreadable schema exits 0" [ "$rc" -eq 0 ]
+check "24 healthy-schema removed" [ ! -e "$t/stack/.deploy/healthy-schema" ]
+cleanup
+
+setup
+healthy_schema "$FP1 $OLD"
+cp "$t/stack/.deploy/healthy-schema" "$t/hs.before"
+printf '%s\n' "$FP2" > "$STUB/fingerprints"
+export STUB_UP_RC=1
+run_deploy "$NEW"
+check "24 failed deploy leaves healthy-schema unchanged" cmp -s "$t/hs.before" "$t/stack/.deploy/healthy-schema"
 cleanup
 
 if [ "$failures" -eq 0 ]; then

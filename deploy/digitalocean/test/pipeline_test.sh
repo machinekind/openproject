@@ -30,6 +30,9 @@ case "$*" in
   "api repos/machinekind/openproject/tags --paginate"*) printf '%b\n' "${STUB_TAGS-v17.0.0}" ;;
   "api repos/machinekind/openproject/commits/"*"/pulls"*) printf '%b\n' "${STUB_LABELS-}" ;;
   "api repos/machinekind/openproject/commits/1.2.3 --jq .sha") printf '%s\n' "$STUB_BASE_SHA" ;;
+  "api repos/machinekind/openproject/git/ref/heads/dev --jq .object.sha") printf '%s\n' "${STUB_DEV_TIP:-}" ;;
+  "api repos/machinekind/openproject/compare/"*) echo "$*" >> "${STUB_CALLS:-/dev/null}"; [ "${STUB_COMPARE:-}" != fail ] || exit 1; printf '%s\n' "${STUB_COMPARE:-ahead}" ;;
+  "pr list --repo machinekind/openproject --base dev --state merged --label release:minor "*) printf '%b\n' "${STUB_MINOR_MERGES-}" ;;
   *) echo "unexpected gh $*" >&2; exit 99 ;;
 esac
 STUB
@@ -67,8 +70,8 @@ STUB
 chmod +x "$t/bin/"*
 
 run() {
-  : > "$t/out"; : > "$t/sum"; : > "$t/ssh_args"
-  out="$(env PATH="$t/bin:$PATH" OP_CONF_DIR="$t/conf" OP_SOURCE_DIR="$t/src" REPO=machinekind/openproject \
+  : > "$t/out"; : > "$t/sum"; : > "$t/ssh_args"; : > "$t/calls"
+  out="$(env -u GITHUB_RUN_ATTEMPT PATH="$t/bin:$PATH" STUB_CALLS="$t/calls" OP_CONF_DIR="$t/conf" OP_SOURCE_DIR="$t/src" REPO=machinekind/openproject \
     RUNNER_TEMP="$t/rt" GITHUB_OUTPUT="$t/out" GITHUB_STEP_SUMMARY="$t/sum" "$@" 2>"$t/err")"
   rc=$?
   err="$(cat "$t/err")"; gho="$(cat "$t/out")"; sum="$(cat "$t/sum")"
@@ -84,8 +87,11 @@ contains "b label minor" "$gho" "tag=1.3.0"
 nv SHA="$B" BUMP=minor
 contains "c BUMP minor" "$gho" "tag=1.3.0"
 nv SHA="$B" BUMP=major
-nonzero "d major refused" "$rc"
-contains "d message" "$err" "patch or minor"
+nonzero "d major refused on push" "$rc"
+contains "d message" "$err" "only from workflow_dispatch"
+nv SHA="$B" BUMP=bogus
+nonzero "d2 unknown bump refused" "$rc"
+contains "d2 message" "$err" "patch, minor or major"
 nv SHA="$B" STUB_RELEASES='17.8.0-mcp.1\ndev-20260923-e33ce7f' STUB_TAGS='v17.0.0'
 nonzero "e no final release" "$rc"
 contains "e message" "$err" "no final release"
@@ -101,15 +107,84 @@ contains "g count" "$sum" "2 new migration(s)"
 nv SHA=abc
 nonzero "h short sha" "$rc"
 contains "h message" "$err" "full commit SHA"
+dnv() { nv EVENT_NAME=workflow_dispatch ACTOR=alice DEPLOY_DISPATCHERS='bob,alice' "$@"; }
+dnv SHA="$B" BUMP=major
+check "s1 dispatch major exit" "$rc" 0
+contains "s1 dispatch major tag" "$gho" "tag=2.0.0"
+dnv SHA="$B" BUMP=major STUB_LABELS='release:minor'
+contains "s2 label does not lower major" "$gho" "tag=2.0.0"
+dnv SHA="$C" BUMP=major
+contains "s3 major passes the migration gate" "$gho" "tag=2.0.0"
+dnv SHA="$B" BUMP=minor ACTOR=mallory
+nonzero "s4 dispatch by an unlisted login" "$rc"
+contains "s4 message" "$err" "DEPLOY_DISPATCHERS"
+dnv SHA="$B" ACTOR=ali
+nonzero "s5 prefix of a login refused" "$rc"
+dnv SHA="$B" DEPLOY_DISPATCHERS=
+nonzero "s6 empty allowlist refuses" "$rc"
+nv SHA="$A" STUB_BASE_SHA="$B"
+nonzero "t1 release not an ancestor" "$rc"
+contains "t1 message" "$err" "is not an ancestor"
+check "t1 no tag" "$gho" ""
+nv SHA="$D" STUB_MINOR_MERGES="$C"
+contains "u1 labelled merge in range makes minor" "$gho" "tag=1.3.0"
+nv SHA="$B" STUB_MINOR_MERGES="$C"
+contains "u2 labelled merge after sha ignored" "$gho" "tag=1.2.4"
+nv SHA="$D" STUB_BASE_SHA="$C" STUB_MINOR_MERGES="$B"
+nonzero "u3 labelled merge before the release ignored" "$rc"
+contains "u3 message" "$err" "release:minor"
+nv SHA="$B" STUB_MINOR_MERGES="$(printf '0%.0s' $(seq 1 40))\nnot-a-sha"
+contains "u4 unknown merge commits ignored" "$gho" "tag=1.2.4"
 
 C64="$(printf 'c%.0s' $(seq 1 64))"
 V="ghcr.io/machinekind/openproject:1.2.4@sha256:$C64"
-ri() { run "$@" bash "$P" resolve-image; }
+ri() { run EVENT_NAME=workflow_dispatch ACTOR=alice DEPLOY_DISPATCHERS='bob,alice' SHA="$B" STUB_DEV_TIP="$B" "$@" bash "$P" resolve-image; }
 ri INPUT_IMAGE="$V" BUILT_IMAGE=
 check "i exit" "$rc" 0
 contains "i image" "$gho" "image=$V"
 ri INPUT_IMAGE= BUILT_IMAGE="$V"
 contains "j image" "$gho" "image=$V"
+ri EVENT_NAME=push ACTOR=mallory INPUT_IMAGE= BUILT_IMAGE="$V"
+check "j4 push at the dev tip exit" "$rc" 0
+contains "j4 push image" "$gho" "image=$V"
+ri EVENT_NAME=push INPUT_IMAGE= BUILT_IMAGE="$V" STUB_DEV_TIP="$C" STUB_COMPARE=ahead
+check "j13 push behind the tip, ahead exit" "$rc" 0
+contains "j13 image" "$gho" "image=$V"
+contains "j13 compare call" "$(cat "$t/calls")" "$B...$C"
+ri EVENT_NAME=push INPUT_IMAGE= BUILT_IMAGE="$V" STUB_DEV_TIP="$C" STUB_COMPARE=diverged
+nonzero "j14 push off dev refused" "$rc"
+contains "j14 message" "$err" "not on dev any more"
+check "j14 no image output" "$gho" ""
+ri EVENT_NAME=push GITHUB_RUN_ATTEMPT=2 INPUT_IMAGE= BUILT_IMAGE="$V" STUB_DEV_TIP="$C"
+nonzero "j15 re-run behind the tip refused" "$rc"
+contains "j15 message" "$err" "dev has moved on"
+check "j15 no compare call" "$(cat "$t/calls")" ""
+check "j15 no image output" "$gho" ""
+ri INPUT_IMAGE= BUILT_IMAGE="$V" STUB_DEV_TIP="$C"
+nonzero "j16 build dispatch behind the tip refused" "$rc"
+contains "j16 message" "$err" "dev has moved on"
+ri EVENT_NAME=push INPUT_IMAGE= BUILT_IMAGE="$V" STUB_DEV_TIP="$C" STUB_COMPARE=fail
+nonzero "j17 compare failure refused" "$rc"
+contains "j17 message" "$err" "could not compare"
+ri ACTOR=mallory INPUT_IMAGE="$V"
+nonzero "j6 image dispatch by an unlisted login" "$rc"
+contains "j6 message" "$err" "DEPLOY_DISPATCHERS"
+check "j6 no image output" "$gho" ""
+ri ACTOR=mallory INPUT_IMAGE= BUILT_IMAGE="$V"
+nonzero "j7 build dispatch by an unlisted login" "$rc"
+ri DEPLOY_DISPATCHERS='alice2 bob' INPUT_IMAGE="$V"
+nonzero "j8 longer login does not match" "$rc"
+ri DEPLOY_DISPATCHERS=' bob ,  alice ' INPUT_IMAGE="$V"
+nonzero "j9 spaces around logins refused" "$rc"
+contains "j9 message" "$err" "not GitHub logins separated by commas"
+ri ACTOR=Alice INPUT_IMAGE="$V"
+check "j11 login case is ignored" "$rc" 0
+ri DEPLOY_DISPATCHERS= INPUT_IMAGE="$V"
+nonzero "j12 unset allowlist refused" "$rc"
+contains "j12 message" "$err" "missing, empty"
+ri EVENT_NAME=push INPUT_IMAGE="$V"
+nonzero "j10 image input on push refused" "$rc"
+contains "j10 message" "$err" "only from workflow_dispatch"
 ri INPUT_IMAGE="$V" DEPLOY_HOST_NAME=op.example.org
 contains "j2 host output" "$gho" "host=op.example.org"
 ri INPUT_IMAGE="$V" DEPLOY_HOST_NAME=
@@ -119,6 +194,14 @@ for bad in "ghcr.io/other/openproject:1.2.4@sha256:$C64" "ghcr.io/machinekind/op
   ri INPUT_IMAGE="$bad"
   nonzero "k rejects $(printf '%s' "$bad" | head -n 1 | cut -c1-50)" "$rc"
 done
+
+cd_() { run EVENT_NAME=workflow_dispatch ACTOR=alice DEPLOY_DISPATCHERS='bob,alice' "$@" bash "$P" check-dispatcher; }
+cd_
+check "k1 listed login allowed" "$rc" 0
+cd_ ACTOR=mallory
+nonzero "k2 unlisted login refused" "$rc"
+cd_ DEPLOY_DISPATCHERS='bob alice'
+nonzero "k3 malformed list refused" "$rc"
 
 KEY=$'-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----'
 HK='203.0.113.10 ssh-ed25519 AAAAhost'
@@ -146,6 +229,10 @@ rd DEPLOY_HOST_IP='203.0.113.10;id'
 nonzero "p bad ip" "$rc"
 contains "p message" "$err" "IPv4"
 check "p no ssh" "$(cat "$t/ssh_args")" ""
+rd DEPLOY_SSH_KEY=
+nonzero "r1 empty key" "$rc"
+contains "r1 message" "$err" "triggered by a bot"
+contains "r1 names ci-setup" "$err" "make ci-setup"
 rd STUB_ADD_RC=1
 nonzero "q bad key" "$rc"
 contains "q message" "$err" "not a usable private key"

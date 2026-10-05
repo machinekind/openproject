@@ -1,9 +1,10 @@
-name: Workflow lint
+name: Workflow and deploy kit checks
 
 on:
   pull_request:
     paths:
       - ".github/workflows/**"
+      - "deploy/digitalocean/**"
 
 permissions:
   contents: read
@@ -28,3 +29,13 @@ jobs:
         with:
           persist-credentials: false
       - run: docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/zizmorcore/zizmor@sha256:a2eb396d886c053073405c7a980f2139ba2248ec172243cfa3841e57196e8101 --offline .github/workflows
+
+  deploy-kit:
+    name: Deploy kit shellcheck and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make -C deploy/digitalocean test
