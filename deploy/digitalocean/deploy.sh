@@ -84,10 +84,11 @@ image_id() { [ -z "$1" ] || docker image inspect --format '{{.Id}}' "$1" 2>/dev/
 running_image_id() { web="$(web_container)"; [ -z "$web" ] || docker inspect --format '{{.Image}}' "$web" 2>/dev/null || true; }
 
 set_image() {
-  { grep -v '^OPENPROJECT_IMAGE=' .env || true; } > .env.tmp
-  printf 'OPENPROJECT_IMAGE=%s\n' "$1" >> .env.tmp
-  chmod 600 .env.tmp
-  mv .env.tmp .env
+  tmp="$(mktemp .env.XXXXXX)"
+  { grep -v '^OPENPROJECT_IMAGE=' .env || true; } > "$tmp"
+  printf 'OPENPROJECT_IMAGE=%s\n' "$1" >> "$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" .env
 }
 
 predeploy_dump() {
@@ -141,11 +142,11 @@ prune_images() { # prune_images REF KEEP_ID...: removes the images of REF's repo
   repo="${ref%%@*}"
   case "${repo##*:}" in */*) ;; *) repo="${repo%:*}" ;; esac
   [ -n "$repo" ] || return 0
-  keep=" $* $(docker container ls -a -q 2>/dev/null | xargs -r docker container inspect --format '{{.Image}}' 2>/dev/null | tr '\n' ' ') "
+  keep=" $* $( { docker container ls -a -q 2>/dev/null | xargs -r docker container inspect --format '{{.Image}}' 2>/dev/null || true; } | tr '\n' ' ') "
   docker image ls --no-trunc --format '{{.Repository}} {{.ID}}' 2>/dev/null | awk -v r="$repo" '$1 == r { print $2 }' | sort -u |
     while IFS= read -r id; do
       case "$keep" in *" $id "*) ;; *) docker image rm -f "$id" >/dev/null 2>&1 || true ;; esac
-    done
+    done || true
   docker image prune -f >/dev/null 2>&1 || true
 }
 
@@ -185,8 +186,8 @@ restart_allowed() {
 
 finish_failure() {
   rm -f .deploy/previous-image.pending
-  prune_dumps
-  prune_images "${new:-$old}" "$(image_id "$old")" "$(cat .deploy/previous-image-id 2>/dev/null || true)" "$pending_id" "$(running_image_id)"
+  prune_dumps || true
+  prune_images "${new:-$old}" "$(image_id "$old")" "$(cat .deploy/previous-image-id 2>/dev/null || true)" "$pending_id" "$(running_image_id)" || true
   exit 1
 }
 
@@ -248,6 +249,6 @@ rm -f .deploy/last-dump
 fp="$(schema_fingerprint)"
 if [ -n "$fp" ]; then printf '%s %s\n' "$fp" "$(env_value OPENPROJECT_IMAGE)" > .deploy/healthy-schema; else rm -f .deploy/healthy-schema; fi
 web="$(web_container)"
-prune_images "$(docker inspect --format '{{.Config.Image}}' "$web" 2>/dev/null || true)" "$(running_image_id)" "$(cat .deploy/previous-image-id 2>/dev/null || true)"
-prune_dumps
+prune_images "$(docker inspect --format '{{.Config.Image}}' "$web" 2>/dev/null || true)" "$(running_image_id)" "$(cat .deploy/previous-image-id 2>/dev/null || true)" || true
+prune_dumps || true
 echo "running: $(docker inspect --format '{{.Config.Image}}' "$web")"

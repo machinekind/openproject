@@ -68,7 +68,7 @@ case "$*" in
     echo DUMPDATA
     exit "${STUB_RUN_RC:-0}" ;;
   "container ls -a -q") if [ -f "$STUB/containers" ]; then cat "$STUB/containers"; fi ;;
-  "container inspect --format {{.Image}} "*) if [ -f "$STUB/container_images" ]; then cat "$STUB/container_images"; fi ;;
+  "container inspect --format {{.Image}} "*) [ -z "${STUB_INSPECT_FAIL:-}" ] || exit 1; if [ -f "$STUB/container_images" ]; then cat "$STUB/container_images"; fi ;;
   "image ls "*) if [ -f "$STUB/images" ]; then cat "$STUB/images"; fi ;;
   "image rm -f "*) echo "rm $4" >> "$STUB/calls" ;;
   "image prune -f") echo prune >> "$STUB/calls" ;;
@@ -80,7 +80,7 @@ STUBEOF
   export PATH
 }
 
-cleanup() { rm -rf "$t"; unset STUB_PULL_RC STUB_UP_RC STUB_UP_FAIL_IMAGE STUB_HEALTH STUB_UNHEALTHY_IMAGE STUB_RUN_RC STUB_SEEDER_RC STUB_SEEDER_STATUS STUB_SEEDER_UNTOUCHED STUB_SEEDER_STARTED EXPECTED_KIT_SHA256; }
+cleanup() { rm -rf "$t"; unset STUB_PULL_RC STUB_UP_RC STUB_UP_FAIL_IMAGE STUB_HEALTH STUB_UNHEALTHY_IMAGE STUB_RUN_RC STUB_SEEDER_RC STUB_SEEDER_STATUS STUB_SEEDER_UNTOUCHED STUB_SEEDER_STARTED STUB_INSPECT_FAIL EXPECTED_KIT_SHA256; }
 
 ORIG_PATH="$PATH"
 run_deploy() { (cd "$t/stack" && ./deploy.sh "$@") > "$t/out" 2> "$t/err"; rc=$?; }
@@ -129,6 +129,17 @@ check "3 previous image kept" calls_lacks "rm sha256:old"
 check "3 current image kept" calls_lacks "rm sha256:new"
 check "3 other repository kept" calls_lacks "rm sha256:pg"
 check "3 no pending previous image" [ ! -e "$t/stack/.deploy/previous-image.pending" ]
+cleanup
+
+setup
+echo c1 > "$STUB/containers"
+printf '%s\n' 'ghcr.io/machinekind/openproject sha256:new' 'ghcr.io/machinekind/openproject sha256:older' > "$STUB/images"
+export STUB_INSPECT_FAIL=1
+run_deploy "$NEW"
+check "3b failing container inspect still exits 0" [ "$rc" -eq 0 ]
+check "3b last line is running:" [ "$(tail -n 1 "$t/out")" = "running: $NEW" ]
+check "3b no fixed .env.tmp left" [ ! -e "$t/stack/.env.tmp" ]
+check "3b no stray temp files left" count_files "$t/stack/.env.*" 0
 cleanup
 
 setup

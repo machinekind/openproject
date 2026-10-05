@@ -423,24 +423,43 @@ Then run `make rollback` from the laptop, or `make deploy IMAGE=<image that matc
 `./deploy.sh` or `make deploy`: after a deploy that went healthy, `.env` still names the new image, and its
 seeder would apply the same migrations to the restored database again.
 
+Finish with `make env-pull`, so the laptop's `DATABASE_URL` names the restored database. An `env-push` before
+that points production back at the old database.
+
 **Attachments.**
 `docker run --rm -v openproject-prod_assets:/assets -v /var/backups/openproject:/in alpine tar -xzf /in/assets-YYYY-MM-DD.tar.gz -C /assets`
 
 **Whole server.** Run `make ci-pause` first: a Droplet backup taken before `make deploy-hold` comes back
 without the hold, and a fresh Droplet has none. Restore a Droplet backup, or create a fresh Droplet with
 `cloud-init.yml` and `--tag-name openproject`; the tag gives it database access and the firewall. The
-Droplet holds nothing that cannot be recreated except the attachments volume. Find the image production ran
-last: the latest release's notes show it (`gh release view --repo machinekind/openproject`), and so does the
-last `make status` output you have. Then:
+Droplet holds nothing that cannot be recreated except the attachments volume. The image to run is the one
+that ran last. Take the newest of:
+
+- the `Deployed <image>` line in the summary of the newest 'Deploy production' run whose Deploy job got past
+  'Deploy over the forced command', whatever the run's final status. A run that failed later, at verify or
+  release, has still switched and migrated production. This covers pushes and `image` dispatches.
+- the last line, `running: <image>`, of the newest laptop `make deploy` or `make rollback` output, if someone
+  kept it. `IMAGE` in `~/.config/openproject-do/state` is not a record of what ran: `make image` and
+  `make configure IMAGE=` write it too.
+- the latest GitHub release (`gh release view --repo machinekind/openproject`), which exists only for builds
+  that passed verify.
+
+After a database point-in-time restore, pick the image that was running at that point in time. Then:
 
 1. `make adopt` (a fresh Droplet has a new IP).
-2. Pin the new host key as in One-time setup, before any other target connects.
-3. A fresh Droplet: `make configure HOST=<host> IMAGE=<that image>`, then `make up`. `make push` alone starts
-   nothing, and the laptop's `OPENPROJECT_IMAGE` is stale unless you set it here. A restored Droplet backup
-   starts the image it ran when the backup was taken: `make push`, then `make deploy IMAGE=<that image>` if CI
-   deployed after the backup.
-4. Rerun `make ci-setup`; it publishes the new IP and host key to GitHub and installs the deploy key.
-5. `make deploy-hold` again if it was set before, then `make ci-resume`.
+2. Pin the new host key as in One-time setup, before any other target connects: `ssh root@<ip> true`, and
+   compare the fingerprint with the Recovery Console.
+3. A fresh Droplet: `make configure HOST=<host> IMAGE=<that image>`. The laptop's `OPENPROJECT_IMAGE` is
+   stale unless you set it here. A restored Droplet backup starts the image it ran when the backup was taken:
+   `make push`, then `make deploy IMAGE=<that image>` if CI deployed after the backup.
+4. Update the DNS A record to the IP that `make configure` prints, then `make dns-wait`.
+5. `make up`. `make push` alone starts nothing.
+6. Off-server backups: `make backup-remote` (human), then `make backup-remote-set REMOTE=<remote>:`.
+7. `make backup-install`.
+8. Restore the attachments from the off-server remote: `rclone copy <remote>:assets-<date>.tar.gz
+   /var/backups/openproject` on the server, then the tar command under Attachments.
+9. `make ci-setup` (human). It publishes the new IP and host key to GitHub and installs the deploy key.
+10. `make ci-resume` if a pause was set, and `make deploy-hold` again if a hold was intended.
 
 ## Getting back in
 

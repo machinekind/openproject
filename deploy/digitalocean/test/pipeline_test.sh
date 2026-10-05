@@ -221,7 +221,7 @@ check "k8 re-run of an image dispatch skips the tip check" "$rc" 0
 gt GITHUB_RUN_ATTEMPT=2 ACTOR=mallory INPUT_IMAGE="$V"
 nonzero "k9 re-run by an unlisted login refused" "$rc"
 
-KEY=$'-----BEGIN OPENSSH PRIVATE KEY-----\nfake\n-----END OPENSSH PRIVATE KEY-----'
+KEY=$'fake-deploy-key-line-1\nfake-deploy-key-line-2'
 HK='203.0.113.10 ssh-ed25519 AAAAhost'
 rd() { rm -f "$t/added" "$t/kh_seen"; run IMAGE="$V" DEPLOY_SSH_KEY="$KEY" DEPLOY_HOST_IP=203.0.113.10 DEPLOY_SSH_HOST_KEY="$HK" "$@" bash "$P" remote-deploy; }
 rd

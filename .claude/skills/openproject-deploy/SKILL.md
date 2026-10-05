@@ -111,7 +111,7 @@ yourself. After you change anything in `deploy/digitalocean`, run `make test`.
 | Check tools, logins and names | agent | `make preflight` |
 | Create Droplet, database, firewall | **human** | `make provision SSH_KEY_ID=<id>` |
 | Host name and admin mail | agent | `make configure HOST=<host> ADMIN_MAIL=<mail>`, then tell the user which DNS A record to create |
-| Allow the user's login to build versions | **human** (repository admin) | `gh variable set DEPLOY_DISPATCHERS --repo machinekind/openproject --body '<login>'`. `make ci-setup` creates it later if absent, but a versioned `make image` needs the login in it now |
+| Allow the user's login to build versions | **human** (repository admin) | First `gh variable get DEPLOY_DISPATCHERS --repo machinekind/openproject`, then `gh variable set DEPLOY_DISPATCHERS --repo machinekind/openproject --body '<existing>,<login>'`. If the get fails with "not found", the variable does not exist yet, so use `--body '<login>'`; a plain `<login>` on an existing variable replaces the list. A repository admin runs it. `make ci-setup` creates it later if absent, but a versioned `make image` needs the login in it now |
 | Build and pin the image | agent | `make image BUMP=minor` (or `TAG=<semver>`) |
 | Wait for DNS | agent | `make dns-wait` |
 | Push files, create extensions, start, verify | agent | `make up` (the first start migrates an empty database and takes 5 to 10 minutes) |
@@ -136,7 +136,8 @@ yourself. After you change anything in `deploy/digitalocean`, run `make test`.
 - **Rails commands are slow.** `summary`, `harden`, `roles`, `unban` and the account targets boot the
   application first, which takes 30 to 90 seconds and prints nothing meanwhile.
 - **`push` does not overwrite a differing server `.env`.** Decide with `env-diff`, then `env-push` or
-  `env-pull`. The server owns `OPENPROJECT_IMAGE`: `env-diff` ignores it and `env-push` keeps the server's
+  `env-pull`. When `env-diff` shows `DATABASE_URL` differs, never run `env-push` or `FORCE_ENV=1` push without
+  the user's decision: it can point production at another database. The server owns `OPENPROJECT_IMAGE`: `env-diff` ignores it and `env-push` keeps the server's
   value, refusing when the server has none. Only on a server without any `.env` does `push` install the local
   one, image included; run `make configure HOST=<host> IMAGE=<current release image>` before that.
 - **DigitalOcean blocks outbound ports 25, 465 and 587.** Use a mail provider that accepts 2525.
