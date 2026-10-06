@@ -1,0 +1,154 @@
+//-- copyright
+// OpenProject is an open source project management software.
+// Copyright (C) the OpenProject GmbH
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License version 3.
+//
+// OpenProject is a fork of ChiliProject, which is a fork of Redmine. The copyright follows:
+// Copyright (C) 2006-2013 Jean-Philippe Lang
+// Copyright (C) 2010-2013 the ChiliProject Team
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; either version 2
+// of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+//
+// See COPYRIGHT and LICENSE files for more details.
+//++
+
+:root {
+  --primary-button-color: var(--mk-ink);
+  --primary-button-color--major1: var(--mk-red);
+  --primary-button-color--minor1: var(--mk-paper-3);
+  --primary-button-color--minor2: var(--mk-paper-3);
+  --primary-button-color--dark-mode: var(--mk-red);
+  --font-color-on-primary: #FFFFFF;
+
+  --accent-color: var(--mk-red);
+  --accent-color--major1: var(--mk-red-deep);
+  --accent-color--major2: var(--mk-red-deep);
+  --accent-color--minor1: var(--mk-red-wash);
+  --accent-color--minor2: var(--mk-red-wash);
+  --accent-color--dark-mode: var(--mk-red-soft);
+
+  --header-bg-color: var(--mk-ink);
+  --header-border-bottom-color: var(--mk-ink);
+  --header-border-bottom-width: 0;
+  --header-item-font-color: #FFFFFF;
+  --header-item-font-hover-color: #FFFFFF;
+
+  --main-menu-bg-color: var(--mk-paper);
+  --main-menu-border-color: var(--mk-line);
+  --main-menu-bg-selected-background: var(--mk-red);
+
+  --box-list-item-bg-hover-color: var(--mk-paper-2);
+  --box-list-item-border-color: var(--mk-line);
+  --box-list-item-selected-bg-color: var(--mk-paper-3);
+  --box-list-item-selected-bg-hover-color: var(--mk-line);
+  --box-list-item-selected-border-color: var(--mk-line-2);
+  --box-list-item-pressed-border-color: var(--mk-red);
+}
+
+[data-color-mode][data-light-theme=light],
+[data-color-mode][data-dark-theme=dark] {
+  --borderColor-accent-emphasis: var(--accent-color);
+  --underlineNav-borderColor-active: var(--accent-color);
+  --treeViewItem-leadingVisual-iconColor-rest: var(--fgColor-muted);
+  --bgColor-accent-muted: var(--bgColor-muted);
+  --borderColor-accent-muted: var(--borderColor-default);
+  --selection-bgColor: color-mix(in srgb, var(--accent-color) 20%, transparent);
+  --focus-outlineColor: var(--fgColor-default);
+  --focus-outline: 2px solid var(--fgColor-default);
+  --ck-color-focus-border: var(--fgColor-default);
+  --ck-color-focus-outer-shadow: transparent;
+  --ck-focus-ring: 1px solid var(--ck-color-focus-border);
+  --ck-focus-outer-shadow: var(--ck-focus-outer-shadow-geometry) var(--ck-color-focus-outer-shadow);
+  --ck-color-resizer: var(--ck-color-focus-border);
+  --ck-color-widget-type-around-button-active: var(--ck-color-focus-border);
+  --ck-color-widget-type-around-button-icon: var(--bgColor-default);
+  --ck-color-widget-type-around-button-radar-end-alpha: 0;
+  --ck-color-table-column-resizer-hover: var(--ck-color-focus-border);
+  --ck-color-widget-drag-handler-icon-color: var(--bgColor-default);
+  --ck-color-button-on-color: var(--fgColor-default);
+  --ck-color-list-button-on-background: var(--ck-color-button-on-color);
+  --ck-color-list-button-on-background-focus: var(--ck-color-button-on-color);
+  --ck-color-list-button-on-text: var(--bgColor-default);
+  --ck-color-link-default: var(--accent-color);
+}
+
+[data-color-mode][data-light-theme=light] {
+  --fgColor-default: var(--mk-ink);
+  --fgColor-muted: var(--mk-ink-2);
+  --borderColor-default: var(--mk-line-2);
+  --borderColor-muted: var(--mk-line);
+  --bgColor-muted: var(--mk-paper-2);
+  --button-primary-fgColor-disabled: var(--mk-ink-3);
+  --bgColor-disabled: var(--mk-paper-3);
+  --fgColor-disabled: var(--mk-ink-3);
+  --mk-selected-bgColor: var(--mk-red-wash);
+  --ck-color-button-on-background: var(--control-transparent-bgColor-selected);
+  --ck-color-button-on-hover-background: var(--control-transparent-bgColor-hover);
+  --ck-color-button-on-active-background: var(--control-transparent-bgColor-active);
+}
+
+[data-color-mode][data-dark-theme=dark] {
+  --mk-dark-raised: color-mix(in srgb, var(--mk-ink-1) 40%, var(--mk-ink));
+  --bgColor-default: var(--mk-ink);
+  --bgColor-inset: var(--mk-ink);
+  --bgColor-muted: var(--mk-dark-raised);
+  --bgColor-disabled: var(--mk-dark-raised);
+  --overlay-bgColor: var(--mk-ink);
+  --control-bgColor-rest: var(--mk-dark-raised);
+  --control-bgColor-hover: color-mix(in srgb, var(--mk-ink-1) 70%, var(--mk-ink));
+  --control-bgColor-active: var(--mk-ink-1);
+  --borderColor-default: var(--mk-on-dark-line-2);
+  --borderColor-muted: var(--mk-on-dark-line);
+  --fgColor-default: var(--mk-on-dark-1);
+  --fgColor-muted: var(--mk-on-dark-2);
+  --fgColor-disabled: var(--mk-on-dark-3);
+  --mk-selected-bgColor: color-mix(in srgb, var(--mk-red) 18%, var(--mk-ink));
+  --mk-dark-primary-fill: var(--primary-button-color--stored, var(--mk-red));
+  --button--primary-background-color: var(--mk-dark-primary-fill);
+  --button--primary-background-hover-color: color-mix(in srgb, var(--mk-dark-primary-fill) 82%, #000000);
+  --button--primary-background-active-color: color-mix(in srgb, var(--mk-dark-primary-fill) 82%, #000000);
+  --button--primary-background-disabled-color: color-mix(in srgb, var(--mk-dark-primary-fill) 40%, var(--bgColor-default));
+  --button--primary-border-color: color-mix(in srgb, var(--mk-dark-primary-fill) 84%, #FFFFFF);
+  --button--primary-border-disabled-color: color-mix(in srgb, var(--mk-dark-primary-fill) 40%, var(--bgColor-default));
+}
+
+// Beats the !important accent mapping in custom_styles/_primer_color_mapping.erb so that white text
+// on filled accent backgrounds keeps AA contrast in dark mode.
+body[data-color-mode][data-dark-theme=dark] {
+  --bgColor-accent-emphasis: var(--accent-color--major1) !important;
+}
+
+[data-color-mode][data-light-theme=light] ::selection {
+  color: #FFFFFF;
+  background-color: var(--accent-color);
+}
+
+[data-color-mode][data-dark-theme=dark] ::selection {
+  color: #FFFFFF;
+  background-color: var(--accent-color--major1);
+}
+
+.FormControl-advanced-radio-wrap:has(input:checked),
+.FormControl-advanced-checkbox-wrap:has(input:checked) {
+  background-color: var(--mk-selected-bgColor);
+  border-color: var(--borderColor-default);
+  box-shadow: inset 3px 0 0 var(--accent-color);
+}
+
+.timeline-element.relation-line {
+  background-color: var(--fgColor-muted);
+}

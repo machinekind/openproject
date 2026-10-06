@@ -54,9 +54,7 @@ class CustomStylesController < ApplicationController
 
   def show
     @custom_style = CustomStyle.current || CustomStyle.new
-    @current_theme = @custom_style.theme
-    @theme_options = options_for_theme_select
-    @colors = Color.all.sort_by(&:name)
+    prepare_show_view
 
     if params[:tab].blank?
       redirect_to tab: "interface"
@@ -66,12 +64,14 @@ class CustomStylesController < ApplicationController
   def upsell; end
 
   def create
-    @custom_style = CustomStyle.create(custom_style_params)
-    if @custom_style.valid?
+    @custom_style = CustomStyle.new
+    parameters = custom_style_params
+    error = validate_image_uploads(parameters)
+    @custom_style = CustomStyle.create(parameters) unless error
+    if !error && @custom_style.valid?
       redirect_to custom_style_path
     else
-      flash[:error] = @custom_style.errors.full_messages
-      render action: :show, status: :unprocessable_entity
+      render_show_unprocessable(error)
     end
   end
 
@@ -79,12 +79,11 @@ class CustomStylesController < ApplicationController
     flash.clear
     @custom_style = get_or_create_custom_style
     parameters = custom_style_params
-    error = validate_font_uploads(parameters)
+    error = validate_font_uploads(parameters) || validate_image_uploads(parameters)
     if !error && @custom_style.update(parameters)
       redirect_to custom_style_path
     else
-      flash[:error] = error || @custom_style.errors.full_messages
-      render action: :show, status: :unprocessable_entity
+      render_show_unprocessable(error)
     end
   end
 
@@ -215,6 +214,18 @@ class CustomStylesController < ApplicationController
 
   def theme_from_params
     OpenProject::CustomStyles::ColorThemes.themes.find { |t| t[:theme] == params[:theme] }
+  end
+
+  def render_show_unprocessable(error)
+    flash.now[:error] = error || @custom_style.errors.full_messages
+    prepare_show_view
+    render action: :show, status: :unprocessable_entity
+  end
+
+  def prepare_show_view
+    @current_theme = @custom_style.theme
+    @theme_options = options_for_theme_select
+    @colors = Color.all.sort_by(&:name)
   end
 
   def options_for_theme_select

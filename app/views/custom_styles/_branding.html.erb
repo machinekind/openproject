@@ -67,7 +67,7 @@ See COPYRIGHT and LICENSE files for more details.
 } } %>
 
 <%= render partial: "custom_styles/uploads/image",  locals: { image:{
-  field: :favicon,
+  field: :touch_icon,
   label: I18n.t(:label_custom_touch_icon),
   present: @custom_style.id && @custom_style.touch_icon.present?,
   source: @custom_style.id && @custom_style.touch_icon.present? ?

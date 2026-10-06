@@ -1,6 +1,7 @@
 # Built-in MCP setup
 
-This fork enables only the `mcp_server` feature without an Enterprise token.
+This fork enables only the `mcp_server` and `define_custom_style` (Administration > Design) features without an
+Enterprise token.
 Other feature entitlements, subscription status, trials, banners, and user limits
 retain upstream behavior. The override does not disable authentication or grant
 user permissions. Administrators can still disable the server and individual

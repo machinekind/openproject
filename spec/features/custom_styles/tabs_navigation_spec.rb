@@ -33,14 +33,15 @@ require "spec_helper"
 RSpec.describe "Tabs navigation and content switching on the admin/design page" do
   shared_let(:admin) { create(:admin) }
 
-  context "without EE token", with_ee: false do
+  context "without an Enterprise token" do
     before do
       login_as(admin)
       visit custom_style_path(tab: "interface")
     end
 
-    it "redirects to upsell page" do
-      expect(page).to have_enterprise_banner(:basic)
+    it "shows the design page without an upsell banner" do
+      expect(page).not_to have_enterprise_banner
+      expect(page).to have_test_selector("design-color-group-base_colors")
     end
   end
 
@@ -69,6 +70,12 @@ RSpec.describe "Tabs navigation and content switching on the admin/design page" 
       ].each do |variable|
         expect(page).to have_test_selector("edit-design-color-#{variable}")
       end
+    end
+
+    it "uploads the touch icon to its own field on the branding tab" do
+      visit custom_style_path(tab: "branding")
+
+      expect(page).to have_field("custom_style[touch_icon]", type: :file, visible: :all)
     end
 
     it "renders an auto-submitting theme selector on the interface tab" do

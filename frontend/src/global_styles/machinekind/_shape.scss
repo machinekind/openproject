@@ -1,0 +1,94 @@
+//-- copyright
+// OpenProject is an open source project management software.
+// Copyright (C) the OpenProject GmbH
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License version 3.
+//
+// OpenProject is a fork of ChiliProject, which is a fork of Redmine. The copyright follows:
+// Copyright (C) 2006-2013 Jean-Philippe Lang
+// Copyright (C) 2010-2013 the ChiliProject Team
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; either version 2
+// of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+//
+// See COPYRIGHT and LICENSE files for more details.
+//++
+
+:root {
+  --borderRadius-small: 0px;
+  --borderRadius-medium: 0px;
+  --borderRadius-large: 0px;
+}
+
+.Button,
+.button,
+a.button {
+  border-radius: var(--borderRadius-full);
+}
+
+[data-color-mode][data-light-theme=light],
+[data-color-mode][data-dark-theme=dark] {
+  --shadow-resting-xsmall: 0 0 #0000;
+  --shadow-resting-small: 0 0 #0000;
+  --button-default-shadow-resting: 0 0 #0000;
+}
+
+.Page,
+input::file-selector-button {
+  border-radius: var(--borderRadius-full);
+}
+
+input::file-selector-button {
+  margin-inline-end: var(--base-size-8);
+  padding: var(--base-size-4) var(--base-size-12);
+  font: inherit;
+  cursor: pointer;
+}
+
+.work-packages-activities-tab-journals-new-component--input-trigger-column .Button {
+  border-radius: 0;
+}
+
+.tabnav-tab {
+  border: 0;
+  border-bottom: 2px solid transparent;
+}
+
+.tabnav-tab.selected,
+.tabnav-tab[aria-current]:not([aria-current=false]),
+.tabnav-tab[aria-selected=true] {
+  background-color: transparent;
+  border-bottom-color: var(--underlineNav-borderColor-active);
+}
+
+.menu-blocks--container .menu-block {
+  border-radius: 0;
+  background: var(--bgColor-default);
+  border-color: var(--borderColor-muted);
+
+  &:hover {
+    background: var(--bgColor-muted);
+    border-color: var(--borderColor-default);
+  }
+
+  &:hover:not(:focus-visible) {
+    outline: 0;
+  }
+}
+
+.op-step-wizard-footer {
+  background: var(--bgColor-muted);
+  border-width: 1px 0 0;
+}

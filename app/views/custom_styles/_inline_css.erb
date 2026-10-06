@@ -45,6 +45,7 @@ See COPYRIGHT and LICENSE files for more details.
       <% end %>
     <% end %>
     <% if design_color.variable == "primary-button-color" %>
+        --primary-button-color--stored: var(--primary-button-color);
         --primary-button-color--major1: <%= design_color.darken 0.18 %>;
         --primary-button-color--minor1: <%= design_color.lighten 0.8 %>;
         --primary-button-color--minor2: <%= design_color.lighten 0.6 %>;

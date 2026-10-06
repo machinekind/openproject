@@ -100,6 +100,17 @@ See COPYRIGHT and LICENSE files for more details.
   </head>
   <body style="padding: 0">
       <table class="header">
+        <% if Setting.host_name.present? %>
+          <tr>
+            <td>
+              <%= image_tag image_url("machinekind/lockup-poziomy-red-512.png", host: "#{Setting.protocol}://#{ApplicationMailer.host}"),
+                            alt: Setting.app_title,
+                            width: 160,
+                            height: 29,
+                            style: "display: block; width: 160px; height: 29px; margin: 16px 0; border: 0;" %>
+            </td>
+          </tr>
+        <% end %>
         <tr>
           <td>
             <%= format_mail_html(Setting.localized_emails_header) %>
