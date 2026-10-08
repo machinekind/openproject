@@ -1,0 +1,52 @@
+//-- copyright
+// OpenProject is an open source project management software.
+// Copyright (C) the OpenProject GmbH
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License version 3.
+//
+// OpenProject is a fork of ChiliProject, which is a fork of Redmine. The copyright follows:
+// Copyright (C) 2006-2013 Jean-Philippe Lang
+// Copyright (C) 2010-2013 the ChiliProject Team
+//
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; either version 2
+// of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+//
+// See COPYRIGHT and LICENSE files for more details.
+//++
+
+:root {
+  --mk-red: #BD3E3E;
+  --mk-red-deep: #9C2F2F;
+  --mk-red-soft: #D86A6A;
+  --mk-red-wash: #FBF1F1;
+  --mk-ink: #0D0F10;
+  --mk-ink-1: #2B3234;
+  --mk-ink-2: #4E5558;
+  --mk-ink-3: #6B7376;
+  --mk-paper: #FFFFFF;
+  --mk-paper-2: #F5F6F6;
+  --mk-paper-3: #ECEEEF;
+  --mk-line: #E4E7E8;
+  --mk-line-2: #D2D7D9;
+  --mk-on-dark-1: rgba(255, 255, 255, 0.92);
+  --mk-on-dark-2: rgba(255, 255, 255, 0.72);
+  --mk-on-dark-3: rgba(255, 255, 255, 0.55);
+  --mk-on-dark-line: rgba(255, 255, 255, 0.16);
+  --mk-on-dark-line-2: rgba(255, 255, 255, 0.28);
+
+  --mk-font-display: "Big Shoulders Display Variable", "Big Shoulders Display", "Arial Narrow", system-ui, sans-serif;
+  --mk-font-body: "IBM Plex Sans Variable", "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --mk-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}

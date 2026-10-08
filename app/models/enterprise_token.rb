@@ -29,6 +29,7 @@
 #++
 class EnterpriseToken < ApplicationRecord
   EXPIRING_SOON_DAYS = 30
+  TOKENLESS_FEATURES = %i[mcp_server define_custom_style].freeze
 
   class << self
     def all_tokens
@@ -54,7 +55,7 @@ class EnterpriseToken < ApplicationRecord
     end
 
     def allows_to?(feature)
-      return true if feature.to_s == "mcp_server"
+      return true if TOKENLESS_FEATURES.include?(feature.to_s.to_sym)
 
       active_tokens.any? { |token| Authorization::EnterpriseService.new(token).call(feature).result }
     end
@@ -68,11 +69,11 @@ class EnterpriseToken < ApplicationRecord
     end
 
     def available_features
-      active_tokens.map(&:available_features).inject(Set[:mcp_server], :|)
+      active_tokens.map(&:available_features).inject(TOKENLESS_FEATURES.to_set, :|)
     end
 
     def non_trialling_features
-      active_non_trial_tokens.map(&:available_features).inject(Set[:mcp_server], :|)
+      active_non_trial_tokens.map(&:available_features).inject(TOKENLESS_FEATURES.to_set, :|)
     end
 
     def trialling_features

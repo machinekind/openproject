@@ -3,7 +3,7 @@
 ![GitHub commit activity](https://img.shields.io/github/commit-activity/m/opf/openproject)
 ![GitHub branch checks state](https://img.shields.io/github/checks-status/opf/openproject/dev)
 
-> **Modified fork notice (2026-09-17).** This is an unaffiliated fork of [opf/openproject](https://github.com/opf/openproject) maintained by machinekind. It enables the built-in MCP server without an Enterprise token and adds MCP project setup tools and agent workflow instructions. Other Enterprise features retain the upstream token checks. See [MCP setup](MCP_SETUP.md). It is not endorsed by or associated with OpenProject GmbH. Distributed under the GNU GPL v3; see [LICENSE](LICENSE) and [COPYRIGHT](COPYRIGHT).
+> **Modified fork notice (2026-10-04).** This is an unaffiliated fork of [opf/openproject](https://github.com/opf/openproject) maintained by machinekind. It enables the built-in MCP server and the Administration > Design settings without an Enterprise token, ships the Machinekind colors, typefaces, logos and icons as its default look, and adds MCP project setup tools and agent workflow instructions. Other Enterprise features retain the upstream token checks. The bundled IBM Plex and Big Shoulders Display typefaces are licensed under the SIL Open Font License 1.1; see `frontend/src/assets/fonts/machinekind/`. See [MCP setup](MCP_SETUP.md). It is not endorsed by or associated with OpenProject GmbH. Distributed under the GNU GPL v3; see [LICENSE](LICENSE) and [COPYRIGHT](COPYRIGHT).
 
 **We empower teams to achieve great things together for the good of society.**
 

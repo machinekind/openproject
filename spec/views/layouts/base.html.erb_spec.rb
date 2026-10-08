@@ -110,18 +110,36 @@ RSpec.describe "layouts/base" do
         render
       end
 
-      it "renders main favicon" do
+      it "renders the Machinekind favicons" do
         expect(rendered).to have_css(
-          "link[type='image/x-icon'][href*='/assets/favicon.ico']",
+          "link[type='image/x-icon'][href*='/assets/machinekind/favicon.ico']",
           visible: false
+        )
+        expect(rendered).to have_css(
+          "link[rel='icon'][type='image/svg+xml'][href*='/assets/machinekind/favicon.svg']",
+          visible: :all
         )
       end
 
       it "renders apple icons" do
         expect(rendered).to have_css(
-          "link[type='image/png'][href*='/assets/apple-touch-icon-120x120.png']",
+          "link[rel='apple-touch-icon'][type='image/png'][sizes='180x180'][href*='/assets/machinekind/apple-touch-icon.png']",
           visible: false
         )
+      end
+
+      it "renders the web app manifest and theme color" do
+        header_color = OpenProject::Machinekind::Brand::COLORS.fetch("header-bg-color")
+
+        expect(rendered).to have_css("link[rel='manifest'][href$='/manifest.webmanifest']", visible: :all)
+        expect(rendered).to have_css("meta[name='theme-color'][content='#{header_color}']", visible: :all)
+      end
+
+      it "uses the Machinekind logos" do
+        expect(rendered).to include("machinekind/lockup-poziomy-white")
+          .and include("machinekind/lockup-poziomy-ink")
+          .and include("machinekind/mark-red")
+          .and include("machinekind/mark-white")
       end
 
       # We perform a get request against the icons to ensure they are there (and
@@ -132,11 +150,18 @@ RSpec.describe "layouts/base" do
       # in one place, and 2. the view itself makes this request, so this is an appropriate
       # location for it.
       it "icons actually exist" do
-        visit "assets/favicon.ico"
+        visit "assets/machinekind/favicon.ico"
         expect(page.status_code).to eq(200)
 
-        visit "assets/apple-touch-icon-120x120.png"
+        visit "assets/machinekind/favicon.svg"
         expect(page.status_code).to eq(200)
+
+        visit "assets/machinekind/apple-touch-icon.png"
+        expect(page.status_code).to eq(200)
+
+        visit "manifest.webmanifest"
+        expect(page.status_code).to eq(200)
+        expect(page.response_headers["Content-Type"]).to start_with("application/manifest+json")
       end
     end
 
@@ -159,6 +184,10 @@ RSpec.describe "layouts/base" do
           "link[type='image/png'][href*='/assets/development/apple-touch-icon-120x120.png']",
           visible: false
         )
+      end
+
+      it "does not render the Machinekind SVG favicon" do
+        expect(rendered).to have_no_css("link[type='image/svg+xml']", visible: :all)
       end
 
       it "icons actually exist" do
@@ -209,6 +238,12 @@ RSpec.describe "layouts/base" do
         expect(rendered).to render_template partial: "custom_styles/_inline_css"
         expect(rendered).to match /--primary-button-color:\s*#{primary_color.hexcode}/
       end
+
+      it "exposes the stored primary color to the dark theme" do
+        primary_color
+        render
+        expect(rendered).to include("--primary-button-color--stored: var(--primary-button-color);")
+      end
     end
 
     context "when an Enterprise token is active and styles are not present", with_ee: %i[define_custom_style] do
@@ -223,23 +258,33 @@ RSpec.describe "layouts/base" do
       end
     end
 
-    context "when an Enterprise token is active but does not allow custom styles", with_ee: %i[] do
+    context "when there are no Enterprise tokens and styles are present" do
+      let(:custom_style) { create(:custom_style) }
+
       before do
+        allow(CustomStyle).to receive(:current).and_return(custom_style)
+
         render
       end
 
-      it "does not contain an inline CSS block for styles." do
-        expect(rendered).not_to render_template partial: "custom_styles/_inline_css"
+      it "contains the inline CSS block for styles." do
+        expect(rendered).to render_template partial: "custom_styles/_inline_css"
       end
     end
 
-    context "when there are no Enterprise tokens" do
+    context "with an uploaded logo whose file name contains CSS delimiters" do
+      let(:custom_style) { create(:custom_style_with_logo) }
+
       before do
+        allow(custom_style).to receive(:logo_identifier).and_return("logo);x.png")
+        allow(CustomStyle).to receive(:current).and_return(custom_style)
+
         render
       end
 
-      it "does not contain an inline CSS block for styles." do
-        expect(rendered).not_to render_template partial: "custom_styles/_inline_css"
+      it "quotes the logo URL so the style rule stays intact" do
+        expect(rendered).to include('/logo/logo);x.png");')
+        expect(rendered).not_to include("url(/custom_style/")
       end
     end
   end

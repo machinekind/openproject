@@ -76,7 +76,7 @@ Hierarchy is not a relation; set `_links.parent` on the child instead.
 | lockVersion conflict | Item changed since read. | Re-read, take the new `lockVersion`, resend. |
 | Status transition not allowed | Workflow forbids the jump for this type and role. | Call `list_statuses`, pick an allowed next status, or leave status unset on create. |
 | Workspace type is not set to one of the allowed values. | Only from raw API project creation. | Use `create_project`, which sets the workspace type. |
-| MCP server is not available. (HTTP 404) | MCP disabled in Administration. | Check Administration, AI, Model Context Protocol. This fork enables only the MCP entitlement without an Enterprise token. |
+| MCP server is not available. (HTTP 404) | MCP disabled in Administration. | Check Administration, AI, Model Context Protocol. Without an Enterprise token this fork enables only the MCP and Design (custom style) entitlements. |
 | Types still in use by work packages: ... | `update_project_types` was asked to remove a type the project still uses. | Move or delete those work packages, or leave the type enabled. |
 | Not available on this instance: ... / Unknown module names: ... | A name passed to `update_project_modules` is misspelled or its module is not installed. | Take names from `list_project_modules`; the message also lists the valid ones. |
 | The Boards module is not enabled in this project. | `board_view` is off in the project. | `update_project_modules` with `{"enable": ["board_view"]}`. |

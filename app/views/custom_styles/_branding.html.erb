@@ -66,15 +66,18 @@ See COPYRIGHT and LICENSE files for more details.
   instructions: I18n.t("text_custom_favicon_instructions")
 } } %>
 
-<%= render partial: "custom_styles/uploads/image",  locals: { image:{
-  field: :favicon,
-  label: I18n.t(:label_custom_touch_icon),
-  present: @custom_style.id && @custom_style.touch_icon.present?,
-  source: @custom_style.id && @custom_style.touch_icon.present? ?
-            custom_style_touch_icon_path(digest: @custom_style.digest, filename: @custom_style.touch_icon_identifier) :
-            nil,
-  img_class: "custom-touch-icon-preview",
-  accept: "image/*",
-  delete_path: custom_style_touch_icon_delete_path,
-  instructions: I18n.t("text_custom_touch_icon_instructions")
-} } %>
+<%= render partial: "custom_styles/uploads/image",
+           locals: {
+             image: {
+               field: :touch_icon,
+               label: I18n.t(:label_custom_touch_icon),
+               present: @custom_style.id && @custom_style.touch_icon.present?,
+               source: (if @custom_style.id && @custom_style.touch_icon.present?
+                          custom_style_touch_icon_path(digest: @custom_style.digest, filename: @custom_style.touch_icon_identifier)
+                        end),
+               img_class: "custom-touch-icon-preview",
+               accept: "image/*",
+               delete_path: custom_style_touch_icon_delete_path,
+               instructions: I18n.t("text_custom_touch_icon_instructions")
+             }
+           } %>

@@ -177,7 +177,7 @@ module Exports::PDF::Components::Cover
 
   def cover_background_image
     image_file = custom_cover_image
-    image_file = Rails.root.join("app/assets/images/pdf/cover.png") if image_file.nil?
+    image_file = Rails.root.join("app/assets/images/machinekind/pdf-cover.png") if image_file.nil?
     image_obj, image_info = pdf.build_image_object(image_file)
     scale = pdf.bounds.width / image_info.width.to_f
     height = image_info.height.to_f * scale

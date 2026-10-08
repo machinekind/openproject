@@ -51,10 +51,10 @@ RSpec.describe CustomStylesHelper do
     context "CustomStyle present" do
       let(:current_theme) { build_stubbed(:custom_style) }
 
-      context "without EE", with_ee: false do
+      context "without an Enterprise token" do
         context "no BIM edition" do
-          it "is falsey" do
-            expect(subject).to be_falsey
+          it "is truthy" do
+            expect(subject).to be_truthy
           end
         end
 
@@ -100,9 +100,9 @@ RSpec.describe CustomStylesHelper do
         allow(current_theme).to receive(:touch_icon).and_return(true)
       end
 
-      context "without EE", with_ee: false do
-        it "is falsey" do
-          expect(subject).to be_falsey
+      context "without an Enterprise token" do
+        it "is truthy" do
+          expect(subject).to be_truthy
         end
       end
 

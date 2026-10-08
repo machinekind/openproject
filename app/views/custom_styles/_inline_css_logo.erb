@@ -29,22 +29,12 @@ See COPYRIGHT and LICENSE files for more details.
 
 <style type="text/css">
   <%
-  is_ru = I18n.locale == :ru
   cs = apply_custom_styles? ? CustomStyle.current : nil
 
-  logo_url = if is_ru
-               asset_path("logo-white-bg-ua.png")
-             else
-               asset_path("logo_openproject_white_big.png")
-             end
-
-  high_contrast_logo_url = if is_ru
-                             asset_path("logo-black-bg-ua.png")
-                           else
-                             asset_path("logo_openproject.png")
-                           end
-  logo_icon_url = asset_path("icon_logo.svg")
-  logo_icon_white_url = asset_path("icon_logo_white.svg")
+  logo_url = asset_path("machinekind/lockup-poziomy-white.svg")
+  high_contrast_logo_url = asset_path("machinekind/lockup-poziomy-ink.svg")
+  logo_icon_url = asset_path("machinekind/mark-red.svg")
+  logo_icon_white_url = asset_path("machinekind/mark-white.svg")
 
   high_contrast_bim_logo_url = asset_path("bim/logo_openproject_bim_big_coloured.png")
 
@@ -60,10 +50,6 @@ See COPYRIGHT and LICENSE files for more details.
       logo_url = asset_path(cs.theme_logo)
     end
 
-    if is_ru && logo_url == asset_path("logo_openproject.png")
-      logo_url = asset_path("logo-black-bg-ua.png")
-    end
-
     if has_logo_mobile
       mobile_logo_url = custom_style_logo_mobile_path(
         digest: cs.digest,
@@ -77,18 +63,18 @@ See COPYRIGHT and LICENSE files for more details.
   %>
 
   .op-logo--link {
-    background-image: url(<%= logo_url %>);
+    background-image: url("<%= logo_url %>");
   }
 
   .op-logo--icon {
-    background-image: url(<%= logo_icon_url %>);
+    background-image: url("<%= logo_icon_url %>");
   }
 
   .op-logo--icon_white {
-    background-image: url(<%= logo_icon_white_url %>);
+    background-image: url("<%= logo_icon_white_url %>");
   }
 
   .op-logo--link_high_contrast {
-    background-image: url(<%= OpenProject::Configuration.bim? ? high_contrast_bim_logo_url : high_contrast_logo_url %>);
+    background-image: url("<%= OpenProject::Configuration.bim? ? high_contrast_bim_logo_url : high_contrast_logo_url %>");
   }
 </style>

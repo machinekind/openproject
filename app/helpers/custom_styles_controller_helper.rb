@@ -30,6 +30,10 @@
 
 module CustomStylesControllerHelper
   MAX_FONT_UPLOAD_SIZE = 30.megabytes
+  MAX_IMAGE_UPLOAD_SIZE = 5.megabytes
+  IMAGE_UPLOAD_FIELDS = %i[logo logo_mobile export_logo export_cover export_footer favicon touch_icon].freeze
+  IMAGE_CONTENT_TYPES = %w[image/png image/jpeg image/gif image/webp image/svg+xml
+                           image/x-icon image/vnd.microsoft.icon].freeze
 
   def validate_font_uploads(custom_style_params)
     %i(export_font_regular export_font_bold export_font_italic export_font_bold_italic).each do |name|
@@ -37,6 +41,17 @@ module CustomStylesControllerHelper
         error = validate_font_file(name, custom_style_params[name].tempfile)
         return error if error
       end
+    end
+    nil
+  end
+
+  def validate_image_uploads(custom_style_params)
+    IMAGE_UPLOAD_FIELDS.each do |name|
+      upload = custom_style_params[name]
+      next unless upload.is_a?(ActionDispatch::Http::UploadedFile)
+
+      error = validate_image_file(name, upload.tempfile.path)
+      return error if error
     end
     nil
   end
@@ -70,5 +85,18 @@ module CustomStylesControllerHelper
     file.name.font_name.present?
   rescue StandardError
     false
+  end
+
+  def validate_image_file(name, path)
+    label = I18n.t("label_custom_#{name}")
+    if image_file_size(path) > MAX_IMAGE_UPLOAD_SIZE
+      "#{label} #{I18n.t('activerecord.errors.messages.file_too_large', count: MAX_IMAGE_UPLOAD_SIZE)}"
+    elsif IMAGE_CONTENT_TYPES.exclude?(OpenProject::ContentTypeDetector.new(path).detect)
+      "#{label} #{I18n.t('activerecord.errors.messages.invalid')}"
+    end
+  end
+
+  def image_file_size(path)
+    File.size(path)
   end
 end
