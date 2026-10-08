@@ -4,9 +4,9 @@
 
 # Set one key in the server's .env. The line travels over stdin, so a secret value never appears in a command line.
 remote_env_set() {
-  printf '%s=%s\n' "$1" "$2" | remote "cd $REMOTE_DIR && umask 177 && { grep -v '^$1=' .env || true; } > .env.tmp && cat >> .env.tmp && mv .env.tmp .env"
+  printf '%s=%s\n' "$1" "$2" | remote "cd $REMOTE_DIR || exit 1; umask 177; exec 9>.deploy.lock; flock -n 9 || { echo 'a deploy is running; try again when it has finished' >&2; exit 1; }; t=\$(mktemp .env.XXXXXX) || exit 1; { grep -v '^$1=' .env || true; } > \$t && cat >> \$t && chmod 600 \$t && mv -f \$t .env"
 }
-remote_env_unset() { remote "cd $REMOTE_DIR && umask 177 && { grep -v '^$1=' .env || true; } > .env.tmp && mv .env.tmp .env"; }
+remote_env_unset() { remote "cd $REMOTE_DIR || exit 1; umask 177; exec 9>.deploy.lock; flock -n 9 || { echo 'a deploy is running; try again when it has finished' >&2; exit 1; }; t=\$(mktemp .env.XXXXXX) || exit 1; { grep -v '^$1=' .env || true; } > \$t && chmod 600 \$t && mv -f \$t .env"; }
 
 cmd_harden() {
   require_state DROPLET_IP

@@ -1,0 +1,179 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Redeploy this image instead of building, ghcr.io/machinekind/openproject:<tag>@sha256:<digest>. Skips tests, build and release. Only logins in the repository variable DEPLOY_DISPATCHERS may dispatch
+        required: false
+        default: ""
+      bump:
+        description: Version bump for a build. MAJOR is only ever chosen here
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions: {}
+
+# One run at a time per ref, so each version is computed after the previous release exists; a newer push replaces a waiting run.
+# A dispatch by a login outside DEPLOY_DISPATCHERS gets a group of its own, so it cannot replace a waiting deploy.
+concurrency:
+  group: ${{ (github.event_name != 'workflow_dispatch' || contains(format(',{0},', vars.DEPLOY_DISPATCHERS), format(',{0},', github.triggering_actor))) && format('production-deploy-{0}', github.ref) || format('refused-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Check the run
+    if: github.repository == 'machinekind/openproject'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: deploy/digitalocean
+          persist-credentials: false
+      - name: Check the dispatcher, and the tip of dev for a re-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_IMAGE: ${{ inputs.image }}
+          ACTOR: ${{ github.triggering_actor }}
+          DEPLOY_DISPATCHERS: ${{ vars.DEPLOY_DISPATCHERS }}
+        run: deploy/digitalocean/ops/pipeline.sh gate
+
+  frontend-tests:
+    needs: gate
+    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test-frontend-unit.yml # zizmor: ignore[self-repository] actionlint 1.7.12 rejects the $/ form
+
+  fork-specs:
+    needs: gate
+    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test-fork-specs.yml # zizmor: ignore[self-repository] actionlint 1.7.12 rejects the $/ form
+
+  version:
+    name: Next version
+    needs: gate
+    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
+      upstream: ${{ steps.next.outputs.upstream }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - id: next
+        name: Compute the next version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          BUMP: ${{ inputs.bump }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.triggering_actor }}
+          DEPLOY_DISPATCHERS: ${{ vars.DEPLOY_DISPATCHERS }}
+        run: deploy/digitalocean/ops/pipeline.sh next-version
+
+  build:
+    needs: version
+    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/fork-image.yml # zizmor: ignore[self-repository] actionlint 1.7.12 rejects the $/ form
+    with:
+      ref: ${{ github.sha }}
+      tag: ${{ needs.version.outputs.tag }}
+
+  deploy:
+    name: Deploy
+    needs: [gate, frontend-tests, fork-specs, build]
+    if: >-
+      !cancelled()
+      && needs.gate.result == 'success'
+      && github.repository == 'machinekind/openproject'
+      && github.ref == 'refs/heads/dev'
+      && vars.DEPLOY_PAUSED != 'true'
+      && (github.event_name != 'workflow_dispatch' || contains(format(',{0},', vars.DEPLOY_DISPATCHERS), format(',{0},', github.triggering_actor)))
+      && (inputs.image || (needs.frontend-tests.result == 'success' && needs.fork-specs.result == 'success' && needs.build.result == 'success'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+      host: ${{ steps.image.outputs.host }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: deploy/digitalocean
+          persist-credentials: false
+      - id: image
+        name: Resolve the image
+        env:
+          INPUT_IMAGE: ${{ inputs.image }}
+          BUILT_IMAGE: ${{ needs.build.outputs.image }}
+          DEPLOY_HOST_NAME: ${{ vars.DEPLOY_HOST_NAME }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.triggering_actor }}
+          DEPLOY_DISPATCHERS: ${{ vars.DEPLOY_DISPATCHERS }}
+        run: deploy/digitalocean/ops/pipeline.sh resolve-image
+      - name: Deploy over the forced command
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST_IP: ${{ vars.DEPLOY_HOST_IP }}
+          DEPLOY_SSH_HOST_KEY: ${{ vars.DEPLOY_SSH_HOST_KEY }}
+        run: deploy/digitalocean/ops/pipeline.sh remote-deploy
+      - name: Verify from the outside
+        env:
+          DEPLOY_HOST_IP: ${{ vars.DEPLOY_HOST_IP }}
+          DEPLOY_HOST_NAME: ${{ vars.DEPLOY_HOST_NAME }}
+        run: deploy/digitalocean/ops/pipeline.sh verify
+
+  release:
+    name: Publish release
+    needs: [version, deploy]
+    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: deploy/digitalocean
+          persist-credentials: false
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          IMAGE: ${{ needs.deploy.outputs.image }}
+          TAG: ${{ needs.version.outputs.tag }}
+          SHA: ${{ github.sha }}
+          REF: dev
+          UPSTREAM: ${{ needs.version.outputs.upstream }}
+          DEPLOY_HOST_NAME: ${{ needs.deploy.outputs.host }}
+          OP_CONF_DIR: ${{ runner.temp }}/opdo
+        run: deploy/digitalocean/ops/infra.sh release

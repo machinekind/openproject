@@ -7,17 +7,21 @@
 .DEFAULT_GOAL := help
 SHELL := /usr/bin/env bash
 OPS := ./ops
+SHELLCHECK_IMAGE := koalaman/shellcheck@sha256:bb596a0d169b85ddd81d8b6d3a2ff6d5baf5fca10b97f575ebc647c3dff62b3d
+TEST_IMAGE := ubuntu@sha256:69cecf4bbf72d2d44a9eef1b71fb98c7fb973d78af11399deccef19beb008ad9
+GIT_TEST_IMAGE := buildpack-deps@sha256:a2049a4ae157e738d66a02198c132a90a98dfac30309df9a9de32940c770436e
 export
 
 help: ## [agent] List all targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-20s %s\n", $$1, $$2}'
 	@echo; echo "  New deployment:  preflight, image, provision*, configure, dns-wait, up, create-admin*, harden, backup-install, roles"
-	@echo "  Update:          image TAG=..., deploy, verify          (* = a person must run it)"
+	@echo "  Update:          merge to dev (GitHub Actions deploys), or image BUMP=..., deploy IMAGE=..., verify          (* = a person must run it)"
+	@echo "  CI once:         push, ci-setup*  (see README, Continuous deployment)"
 
 # --- set up -------------------------------------------------------------------------------------
 preflight: ## [agent] Check tools, logins and the DigitalOcean names provision.sh uses
 	@$(OPS)/infra.sh preflight
-image: ## [agent] Build the fork image and pin it by digest. TAG=17.8.0-mcp.2 [REF=stable-17.8-mcp]
+image: ## [agent] Build the fork image and pin it by digest. BUMP=minor|patch|major or TAG=1.2.0 [REF=dev]. The build refuses unless your login is in DEPLOY_DISPATCHERS. Refuses an existing version unless FORCE=1
 	@$(OPS)/infra.sh image
 provision: ## [human] Create Droplet, database and firewall. Spends money. SSH_KEY_ID=...
 	@bash -c '. $(OPS)/common.sh; require_tty provision' && ./provision.sh
@@ -31,10 +35,14 @@ up: ## [agent] First start: push files, create extensions, deploy, verify
 	@$(OPS)/stack.sh up
 
 # --- run ----------------------------------------------------------------------------------------
-push: ## [agent] Copy the stack files to the server. Never overwrites a differing .env unless FORCE_ENV=1
+push: ## [agent] Copy the stack files to the server; refuses while a deploy runs. Installs the local .env only on a server without one; never overwrites a differing .env unless FORCE_ENV=1
 	@$(OPS)/stack.sh push
-deploy: ## [agent] Pull and restart. With IMAGE=... switch to that image first
+deploy: ## [agent] Pull and restart, then publish a release for the running image. With IMAGE=... switch to that image first
 	@$(OPS)/stack.sh deploy
+release: ## [agent] Publish a GitHub release for an image (default: the pinned one); backfills older versions without marking them latest, with notes generated from merged PRs. [TAG=] [SHA=] [PREV=] [REF=] [UPSTREAM=] [IMAGE=] [NOTES=] [DEPLOYED=]
+	@$(OPS)/infra.sh release
+rollback: ## [agent] Deploy .deploy/previous-image: the image before the last successful switch, or the one a failed switch replaced when it was not rolled back automatically. Only if the newer migrations are backwards compatible
+	@$(OPS)/stack.sh rollback
 verify: ## [agent] Check the live site from the outside: TLS, redirects, closed endpoints, open ports
 	@$(OPS)/stack.sh verify
 status: ## [agent] Containers, memory, disk, last backup
@@ -43,12 +51,30 @@ summary: ## [agent] Users, projects, settings, as seen by the application (slow:
 	@$(OPS)/stack.sh summary
 logs: ## [agent] Redacted container logs. [SERVICE=web] [TAIL=60]
 	@$(OPS)/stack.sh logs
-env-diff: ## [agent] Names of .env keys that differ between laptop and server. Values are never shown
+env-diff: ## [agent] Names of .env keys that differ between laptop and server, except OPENPROJECT_IMAGE. Values are never shown
 	@$(OPS)/stack.sh env-diff
-env-push: ## [agent] Make the local .env win
+env-push: ## [agent] Make the local .env win, except OPENPROJECT_IMAGE, which stays as the server has it. Refuses while a deploy runs or when the server's .env has no image
 	@$(OPS)/stack.sh env-push
 env-pull: ## [agent] Make the server's .env win (keeps a local .env.bak)
 	@$(OPS)/stack.sh env-pull
+test: ## [agent] Shellcheck and the stub tests of this kit, in Docker with Ubuntu 24.04 tools like the server
+	@docker run --rm -v "$(CURDIR):/kit" -w /kit $(SHELLCHECK_IMAGE) -x --severity=warning *.sh ops/*.sh ops/remote/*.sh test/*.sh
+	@for t in deploy_test ci_deploy_test ci_key_test remote_ops_test; do docker run --rm -v "$(CURDIR):/kit" -w /kit $(TEST_IMAGE) bash test/$$t.sh || exit 1; done
+	@docker run --rm -v "$(CURDIR):/kit" -w /kit $(GIT_TEST_IMAGE) bash test/pipeline_test.sh
+
+# --- continuous deployment ----------------------------------------------------------------------
+ci-setup: ## [human] Create the GitHub Actions deploy key, the production environment and its variables. Rerun to rotate the key
+	@$(OPS)/ci.sh ci-setup
+ci-revoke: ## [agent] Make the server refuse the GitHub Actions deploy key
+	@$(OPS)/ci.sh ci-revoke
+ci-pause: ## [human] Stop GitHub Actions from deploying (repository variable DEPLOY_PAUSED=true)
+	@$(OPS)/ci.sh ci-pause
+ci-resume: ## [human] Let GitHub Actions deploy again
+	@$(OPS)/ci.sh ci-resume
+deploy-hold: ## [agent] Make the server refuse CI deploys, whatever GitHub says, until deploy-unhold
+	@$(OPS)/ci.sh deploy-hold
+deploy-unhold: ## [agent] Let the server accept CI deploys again
+	@$(OPS)/ci.sh deploy-unhold
 
 # --- accounts -----------------------------------------------------------------------------------
 admin-password: ## [human] Show the seeded admin's initial password
@@ -88,4 +114,4 @@ ghcr-logout: ## [agent] Remove the GHCR credential from the server
 mcp-register: ## [human] Register this instance's MCP endpoint in Claude Code. [MCP_NAME=openproject-prod]
 	@$(OPS)/maintain.sh mcp-register
 
-.PHONY: help preflight image provision adopt configure dns-wait up push deploy verify status summary logs env-diff env-push env-pull admin-password create-admin reset-password add-users unban harden roles backup-now backup-install backup-remote backup-remote-set restore-drill smtp-test smtp-configure ghcr-login ghcr-logout mcp-register
+.PHONY: test help preflight image provision adopt configure dns-wait up push deploy release verify status summary logs env-diff env-push env-pull admin-password create-admin reset-password add-users unban harden roles backup-now backup-install backup-remote backup-remote-set restore-drill smtp-test smtp-configure ghcr-login ghcr-logout mcp-register rollback ci-setup ci-revoke ci-pause ci-resume deploy-hold deploy-unhold
