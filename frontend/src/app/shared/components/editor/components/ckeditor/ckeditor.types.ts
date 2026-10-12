@@ -57,7 +57,7 @@ export interface ICKEditorInstance {
 
   setData(content:string):void;
 
-  destroy():void;
+  destroy():Promise<void>;
 
   enableReadOnlyMode(lockId:string):void;
 
