@@ -24,6 +24,21 @@ All links use API v3 hrefs. Numeric ids come from the search and list tools; do 
 | `_links.category` | `/api/v3/categories/<id>` | Optional project category. |
 | custom fields | `customFieldN` or `_links.customFieldN` | Resolve names with `search_custom_fields`. |
 
+## Hierarchy custom fields
+
+Value on a work package (multi-value fields take several links), with item ids from `search_custom_field_items`:
+
+```json
+"_links": {"customField7": [{"href": "/api/v3/custom_field_items/12"}]}
+```
+
+Filter forms, usable in `update_board` filters. The second matches the item and everything below it:
+
+```json
+{"customField7": {"operator": "=", "values": ["12"]}}
+{"customField7": {"operator": "eq_with_descendants", "values": ["12"]}}
+```
+
 ## Examples
 
 Milestone with a date:

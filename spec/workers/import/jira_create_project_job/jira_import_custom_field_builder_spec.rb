@@ -189,6 +189,11 @@ RSpec.describe Import::JiraCreateProjectJob::JiraImportCustomFieldBuilder do
     end
 
     context "with a cascading select field (no enterprise)" do
+      before do
+        allow(EnterpriseToken).to receive(:allows_to?).and_call_original
+        allow(EnterpriseToken).to receive(:allows_to?).with(:custom_field_hierarchies).and_return(false)
+      end
+
       let(:jira_field) do
         jira_field_for(name: "CF Cascading",
                        schema: { "type" => "option-with-child",
@@ -409,6 +414,11 @@ RSpec.describe Import::JiraCreateProjectJob::JiraImportCustomFieldBuilder do
     end
 
     context "with a cascading select field without enterprise (list fallback)" do
+      before do
+        allow(EnterpriseToken).to receive(:allows_to?).and_call_original
+        allow(EnterpriseToken).to receive(:allows_to?).with(:custom_field_hierarchies).and_return(false)
+      end
+
       let(:context_group) do
         {
           "projects" => [],
@@ -762,6 +772,8 @@ RSpec.describe Import::JiraCreateProjectJob::JiraImportCustomFieldBuilder do
       let(:major_option)             { instance_double(CustomOption, id: 3) }
 
       before do
+        allow(EnterpriseToken).to receive(:allows_to?).and_call_original
+        allow(EnterpriseToken).to receive(:allows_to?).with(:custom_field_hierarchies).and_return(false)
         allow(custom_field).to receive(:value_of).with("Critical").and_return(critical_option)
         allow(custom_field).to receive(:value_of).with("Critical / Security").and_return(critical_security_option)
         allow(custom_field).to receive(:value_of).with("Major").and_return(major_option)

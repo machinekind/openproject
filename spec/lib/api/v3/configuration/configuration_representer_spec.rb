@@ -250,9 +250,9 @@ RSpec.describe API::V3::Configuration::ConfigurationRepresenter do
 
     describe "availableFeatures" do
       context "without an Enterprise token" do
-        it "includes only MCP" do
+        it "includes only the built-in features" do
           expect(subject)
-            .to be_json_eql(%w(mcp_server).to_json)
+            .to be_json_eql(%w(mcp_server custom_field_hierarchies).to_json)
                   .at_path("availableFeatures")
         end
       end
@@ -260,7 +260,7 @@ RSpec.describe API::V3::Configuration::ConfigurationRepresenter do
       context "with certain features allowed", with_ee: %i[some_value foobar] do
         it "is an array of strings of those flags" do
           expect(subject)
-            .to be_json_eql(%w(mcp_server some_value foobar).to_json)
+            .to be_json_eql(%w(mcp_server custom_field_hierarchies some_value foobar).to_json)
                   .at_path("availableFeatures")
         end
       end

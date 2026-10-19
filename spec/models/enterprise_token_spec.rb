@@ -35,13 +35,15 @@ RSpec.describe EnterpriseToken do
 
   describe ".allows_to?" do
     context "without any tokens" do
-      it "allows MCP for symbol and string feature names" do
+      it "allows the built-in features for symbol and string feature names" do
         expect(described_class.allows_to?(:mcp_server)).to be true
         expect(described_class.allows_to?("mcp_server")).to be true
+        expect(described_class.allows_to?(:custom_field_hierarchies)).to be true
+        expect(described_class.allows_to?("custom_field_hierarchies")).to be true
       end
 
       it "does not allow any other Enterprise feature" do
-        features = OpenProject::Token::FEATURES_PER_PLAN.values.flatten.uniq - [:mcp_server]
+        features = OpenProject::Token::FEATURES_PER_PLAN.values.flatten.uniq - described_class::BUILT_IN_FEATURES.to_a
 
         features.each do |feature|
           expect(described_class.allows_to?(feature)).to be(false), "Expected #{feature} to require a token"
@@ -49,10 +51,10 @@ RSpec.describe EnterpriseToken do
         expect(described_class.allows_to?(:unknown_feature)).to be false
       end
 
-      it "does not treat MCP as a subscription or trial" do
+      it "does not treat the built-in features as a subscription or trial" do
         expect(described_class.active?).to be false
         expect(described_class.trial_only?).to be false
-        expect(described_class.non_trialling_features).to contain_exactly(:mcp_server)
+        expect(described_class.non_trialling_features).to contain_exactly(:mcp_server, :custom_field_hierarchies)
         expect(described_class.trialling_features).to be_empty
         expect(described_class.user_limit).to be_nil
       end
@@ -381,8 +383,8 @@ RSpec.describe EnterpriseToken do
 
   describe ".available_features" do
     context "with no tokens" do
-      it "returns only MCP" do
-        expect(described_class.available_features).to contain_exactly(:mcp_server)
+      it "returns only the built-in features" do
+        expect(described_class.available_features).to contain_exactly(:mcp_server, :custom_field_hierarchies)
       end
     end
 
@@ -390,7 +392,8 @@ RSpec.describe EnterpriseToken do
       let!(:active_token) { create_enterprise_token("an_active_token", plan: :basic, expires_at: 1.year.from_now) }
 
       it "returns the features for the plan of the token" do
-        expect(described_class.available_features).to match_array(OpenProject::Token::FEATURES_PER_PLAN[:basic] | [:mcp_server])
+        expect(described_class.available_features)
+          .to match_array(OpenProject::Token::FEATURES_PER_PLAN[:basic] | described_class::BUILT_IN_FEATURES.to_a)
       end
     end
 
@@ -398,7 +401,8 @@ RSpec.describe EnterpriseToken do
       let!(:trial_token) { create_enterprise_token("a_trial_token", plan: :basic, trial: true, expires_at: 1.year.from_now) }
 
       it "returns the features for the plan of the token" do
-        expect(described_class.available_features).to match_array(OpenProject::Token::FEATURES_PER_PLAN[:basic] | [:mcp_server])
+        expect(described_class.available_features)
+          .to match_array(OpenProject::Token::FEATURES_PER_PLAN[:basic] | described_class::BUILT_IN_FEATURES.to_a)
       end
     end
 
@@ -409,8 +413,8 @@ RSpec.describe EnterpriseToken do
       end
       let!(:invalid_token) { create_enterprise_token("an_invalid_token_with_wrong_domain", plan: :basic, domain: "wrong.domain") }
 
-      it "returns only MCP" do
-        expect(described_class.available_features).to contain_exactly(:mcp_server)
+      it "returns only the built-in features" do
+        expect(described_class.available_features).to contain_exactly(:mcp_server, :custom_field_hierarchies)
       end
     end
   end

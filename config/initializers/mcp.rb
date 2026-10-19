@@ -45,7 +45,9 @@ MCP.configure do |config|
 end
 
 Rails.application.config.to_prepare do
-  McpTools.register McpTools::CreateGroup,
+  McpTools.register McpTools::CreateCustomField,
+                    McpTools::CreateCustomFieldItem,
+                    McpTools::CreateGroup,
                     McpTools::CreateMembership,
                     McpTools::CreateProject,
                     McpTools::CreateProjectInviteLink,
