@@ -69,3 +69,10 @@ jobs:
           spec/components/users/invitation_link_dialog_component_spec.rb
           spec/lib/api/v3/configuration/configuration_representer_spec.rb
           spec/requests/api/v3/types/types_by_workspace_resource_spec.rb
+          spec/controllers/custom_styles_controller_spec.rb
+          spec/controllers/custom_styles_controller_hardening_spec.rb
+          spec/helpers/custom_styles_helper_spec.rb
+          spec/lib/open_project/machinekind
+          spec/mailers/user_mailer_machinekind_logo_spec.rb
+          spec/migrations/set_machinekind_default_theme_spec.rb
+          spec/services/design/update_design_service_machinekind_spec.rb

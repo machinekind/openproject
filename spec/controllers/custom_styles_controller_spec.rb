@@ -92,7 +92,7 @@ RSpec.describe CustomStylesController do
       end
     end
 
-    describe "#create", with_ee: false do
+    describe "#create without an Enterprise token" do
       let(:custom_style) { CustomStyle.new }
       let(:params) do
         {
@@ -101,12 +101,14 @@ RSpec.describe CustomStylesController do
       end
 
       before do
+        allow(CustomStyle).to receive(:create).and_return(custom_style)
+        allow(custom_style).to receive(:valid?).and_return(true)
+
         post :create, params:
       end
 
-      it "renders a 403" do
-        expect(response).to have_http_status(:forbidden)
-        expect(flash[:error][:message]).to match /You need the basic enterprise plan to perform this action/
+      it "redirects to show" do
+        expect(response).to redirect_to action: :show
       end
     end
 
@@ -724,6 +726,22 @@ RSpec.describe CustomStylesController do
         expect(custom_style.reload.theme).to eq("OpenProject Gray")
         expect(flash[:notice]).to eq(I18n.t(:notice_successful_update))
         expect(response).to redirect_to(action: :show, tab: :branding)
+      end
+    end
+
+    describe "#update_themes with the Machinekind theme" do
+      let!(:custom_style) { create(:custom_style, theme: nil) }
+
+      before do
+        create(:design_color, variable: "accent-color", hexcode: "#333333")
+
+        post :update_themes, params: { theme: "Machinekind", tab: :interface }
+      end
+
+      it "selects the theme and removes all color overrides" do
+        expect(custom_style.reload.theme).to eq("Machinekind")
+        expect(DesignColor.count).to eq(0)
+        expect(response).to redirect_to(action: :show, tab: :interface)
       end
     end
 

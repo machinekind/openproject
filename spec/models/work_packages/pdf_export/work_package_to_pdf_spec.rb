@@ -618,9 +618,9 @@ RSpec.describe WorkPackage::PDFExport::WorkPackageToPdf do
       describe "default" do
         it "contains the default specified logo image" do
           expect(pdf[:logos].length).to eq(1)
-          # Rails.root.join("app/assets/images/logo_openproject.png")
-          expect(pdf[:logos].first.hash[:Height]).to eq(150)
-          expect(pdf[:logos].first.hash[:Width]).to eq(700)
+          # Rails.root.join("app/assets/images/machinekind/lockup-poziomy-red-1024.png")
+          expect(pdf[:logos].first.hash[:Height]).to eq(184)
+          expect(pdf[:logos].first.hash[:Width]).to eq(1024)
         end
       end
 

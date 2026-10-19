@@ -25,8 +25,8 @@ LISTEN/NOTIFY, which transaction pooling breaks.
 
 `OPENPROJECT_IMAGE` in `.env` decides what runs. It has no default.
 
-This fork enables the built-in MCP server without an Enterprise token and adds project, group, user and
-membership tools. That code exists only in an image built from the fork. The official image,
+This fork enables the built-in MCP server and the Design settings without an Enterprise token, ships the
+Machinekind theme, and adds project, group, user and membership tools. That code exists only in an image built from the fork. The official image,
 `openproject/openproject:<version>-slim`, runs on this stack unchanged, but its `/mcp` answers 404.
 
 Build with the "Build fork image" workflow. It runs from the default branch and checks out the ref you name:
@@ -60,7 +60,8 @@ such as local MCP client configs with API tokens.
 **Production runs `dev`.** Production has run dev-based images since 2026-09-23. A dev build moves the schema
 past every upstream release, so rolling back to an earlier base is a database restore, not a redeploy. The
 seeder migrates before web starts. Every push to dev runs the fork specs and the frontend unit tests before
-anything is deployed; see Continuous deployment.
+anything is deployed; see Continuous deployment. When merging upstream into a fork branch, keep the fork's
+`public/favicon.ico` with `git checkout --ours public/favicon.ico`.
 
 ## Operating it: `make`
 

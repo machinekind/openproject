@@ -1,5 +1,8 @@
 <% unless apply_custom_favicon? %>
-  <%= favicon_link_tag OpenProject::CustomStyles::Design.favicon_asset_path %>
+  <%= favicon_link_tag OpenProject::CustomStyles::Design.favicon_asset_path, sizes: "32x32" %>
+  <% unless OpenProject::Configuration.development_highlight_enabled? %>
+    <%= favicon_link_tag "machinekind/favicon.svg", type: "image/svg+xml" %>
+  <% end %>
 <% end %>
 
 <% unless apply_custom_touch_icon? %>
@@ -7,5 +10,8 @@
   <%= favicon_link_tag OpenProject::CustomStyles::Design.apple_touch_icon_asset_path,
                        rel: "apple-touch-icon",
                        type: "image/png",
-                       sizes: "120x120" %>
+                       sizes: "180x180" %>
 <% end %>
+
+<link rel="manifest" href="<%= OpenProject::Configuration["rails_relative_url_root"] %>/manifest.webmanifest">
+<meta name="theme-color" content="<%= OpenProject::Machinekind::Brand::COLORS.fetch("header-bg-color") %>">
