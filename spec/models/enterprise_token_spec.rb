@@ -40,6 +40,8 @@ RSpec.describe EnterpriseToken do
         expect(described_class.allows_to?("mcp_server")).to be true
         expect(described_class.allows_to?(:define_custom_style)).to be true
         expect(described_class.allows_to?("define_custom_style")).to be true
+        expect(described_class.allows_to?(:custom_field_hierarchies)).to be true
+        expect(described_class.allows_to?("custom_field_hierarchies")).to be true
       end
 
       it "does not allow any other Enterprise feature" do
@@ -55,7 +57,7 @@ RSpec.describe EnterpriseToken do
       it "does not treat the tokenless features as a subscription or trial" do
         expect(described_class.active?).to be false
         expect(described_class.trial_only?).to be false
-        expect(described_class.non_trialling_features).to contain_exactly(:mcp_server, :define_custom_style)
+        expect(described_class.non_trialling_features).to match_array(described_class::TOKENLESS_FEATURES)
         expect(described_class.trialling_features).to be_empty
         expect(described_class.user_limit).to be_nil
       end
@@ -385,7 +387,7 @@ RSpec.describe EnterpriseToken do
   describe ".available_features" do
     context "with no tokens" do
       it "returns only the tokenless features" do
-        expect(described_class.available_features).to contain_exactly(:mcp_server, :define_custom_style)
+        expect(described_class.available_features).to match_array(described_class::TOKENLESS_FEATURES)
       end
     end
 
@@ -415,7 +417,7 @@ RSpec.describe EnterpriseToken do
       let!(:invalid_token) { create_enterprise_token("an_invalid_token_with_wrong_domain", plan: :basic, domain: "wrong.domain") }
 
       it "returns only the tokenless features" do
-        expect(described_class.available_features).to contain_exactly(:mcp_server, :define_custom_style)
+        expect(described_class.available_features).to match_array(described_class::TOKENLESS_FEATURES)
       end
     end
   end

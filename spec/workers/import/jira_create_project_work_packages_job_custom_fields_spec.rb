@@ -859,7 +859,11 @@ RSpec.describe Import::JiraCreateProjectWorkPackagesJob,
                           payload: issue_payload)
     end
 
-    before { import_project }
+    before do
+      allow(EnterpriseToken).to receive(:allows_to?).and_call_original
+      allow(EnterpriseToken).to receive(:allows_to?).with(:custom_field_hierarchies).and_return(false)
+      import_project
+    end
 
     it "creates a multi-value 'list' custom field" do
       cf = WorkPackageCustomField.find_by!(name: "CF Cascading")

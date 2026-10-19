@@ -112,20 +112,6 @@ RSpec.shared_examples_for "hierarchy custom fields on index page" do |type|
       cf_page.expect_having_create_item "Hierarchy"
     end
   end
-
-  context "with an active enterprise token without custom_field_hierarchies feature", with_ee: [:another_feature] do
-    it "shows the enterprise upsell banner and lacks the 'Hierarchy' option for creation" do
-      expect(page).to have_text(I18n.t("ee.upsell.custom_field_hierarchies.description"))
-      cf_page.expect_not_having_create_item "Hierarchy"
-    end
-  end
-
-  context "with a trial enterprise token", :with_ee_trial, with_ee: [:custom_field_hierarchies] do
-    it "shows the enterprise upsell banner and has the 'Hierarchy' option for creation" do
-      expect(page).to have_text(I18n.t("ee.upsell.custom_field_hierarchies.description"))
-      cf_page.expect_having_create_item "Hierarchy"
-    end
-  end
 end
 
 RSpec.shared_examples_for "expected fields for the custom field's format", :aggregate_failures do |type_plural, format|

@@ -29,7 +29,7 @@
 #++
 class EnterpriseToken < ApplicationRecord
   EXPIRING_SOON_DAYS = 30
-  TOKENLESS_FEATURES = %i[mcp_server define_custom_style].freeze
+  TOKENLESS_FEATURES = %i[mcp_server define_custom_style custom_field_hierarchies].freeze
 
   class << self
     def all_tokens
