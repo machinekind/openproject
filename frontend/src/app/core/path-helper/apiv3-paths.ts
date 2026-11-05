@@ -59,13 +59,18 @@ export class ApiV3Paths {
   }
 
   /**
-   * Principals autocompleter path
+   * Principals autocompleter path, or null when the resource offers no user mentions
    *
    * Primarily used from ckeditor-augmented-textarea
    * https://github.com/opf/commonmark-ckeditor-build/
    *
    */
-  public principals(workPackage:WorkPackageResource, term:string|null) {
+  public principals(resource:HalResource, term:string|null):string|null {
+    if (resource._type !== 'WorkPackage') {
+      return null;
+    }
+
+    const workPackage = resource as WorkPackageResource;
     const filters:ApiV3FilterBuilder = new ApiV3FilterBuilder();
     // Only real and activated users:
     filters.add('status', '!', ['3']);
