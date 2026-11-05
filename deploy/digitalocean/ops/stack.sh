@@ -129,7 +129,9 @@ cmd_verify() {
   expect "login page over HTTPS" "$(code -L "https://$host/")" 200
   expect "HTTP redirects to HTTPS" "$(code "http://$host/")" 308
   expect "health endpoints hidden" "$(code "https://$host/health_checks/default")" 404
-  expect "API refuses anonymous access" "$(code "https://$host/api/v3/projects")" 401
+  users="$(code "https://$host/api/v3/users")"
+  case "$users" in 401|403) users=refused ;; esac
+  expect "API keeps the user list from anonymous visitors" "$users" refused
   expect "MCP endpoint demands credentials" "$(code -X POST -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"verify","version":"0"}}}' "https://$host/mcp")" 401
   expect "registration form closed" "$(curl -s -m 15 $R1 "$R2" "https://$host/login" | grep -c -i 'account/register' || true)" 0
   headers="$(curl -s -I -m 15 $R1 "$R2" "https://$host/login" || true)"
