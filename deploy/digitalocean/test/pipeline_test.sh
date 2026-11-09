@@ -28,7 +28,10 @@ cat > "$t/bin/gh" <<'STUB'
 case "$*" in
   *"release list"*"--json tagName "*) printf '%b\n' "${STUB_RELEASES-1.2.3\n17.8.0-mcp.1}" ;;
   "api repos/machinekind/openproject/tags --paginate"*) printf '%b\n' "${STUB_TAGS-v17.0.0}" ;;
-  "api repos/machinekind/openproject/commits/"*"/pulls"*) printf '%b\n' "${STUB_LABELS-}" ;;
+  "api repos/machinekind/openproject/commits/"*"/pulls"*)
+    c="${2#repos/machinekind/openproject/commits/}"; c="${c%/pulls}"
+    case " ${STUB_SKIP-} " in *" $c "*) echo skip-release ;; *) printf '%b\n' "${STUB_LABELS-}" ;; esac ;;
+  "api repos/machinekind/openproject/git/commits/"*" --jq .parents[0].sha // empty") git -C "$OP_SOURCE_DIR" rev-parse -q --verify "${2##*/}^1" || true ;;
   "api repos/machinekind/openproject/commits/1.2.3 --jq .sha") printf '%s\n' "$STUB_BASE_SHA" ;;
   "api repos/machinekind/openproject/git/ref/heads/dev --jq .object.sha") printf '%s\n' "${STUB_DEV_TIP:-}" ;;
   "api repos/machinekind/openproject/compare/"*) echo "$*" >> "${STUB_CALLS:-/dev/null}"; [ "${STUB_COMPARE:-}" != fail ] || exit 1; printf '%s\n' "${STUB_COMPARE:-ahead}" ;;
@@ -220,6 +223,30 @@ gt GITHUB_RUN_ATTEMPT=2 STUB_DEV_TIP="$C" INPUT_IMAGE="$V"
 check "k8 re-run of an image dispatch skips the tip check" "$rc" 0
 gt GITHUB_RUN_ATTEMPT=2 ACTOR=mallory INPUT_IMAGE="$V"
 nonzero "k9 re-run by an unlisted login refused" "$rc"
+gt
+check "k10 dispatch releases" "$gho" "release=true"
+
+pg() { gt EVENT_NAME=push ACTOR=mallory STUB_BASE_SHA="$A" "$@"; }
+pg
+check "w1 unlabelled push releases" "$gho" "release=true"
+pg STUB_SKIP="$B"
+check "w2 labelled push right after the release exit" "$rc" 0
+check "w2 skipped" "$gho" "release=false"
+contains "w2 summary" "$sum" "skip-release"
+pg SHA="$C" STUB_DEV_TIP="$C" STUB_SKIP="$C"
+check "w3 unlabelled merge since the release releases" "$gho" "release=true"
+pg SHA="$C" STUB_DEV_TIP="$C" STUB_SKIP="$B $C"
+check "w4 every merge since the release labelled skips" "$gho" "release=false"
+pg SHA="$C" STUB_DEV_TIP="$C" STUB_SKIP="$B $C" GITHUB_RUN_ATTEMPT=2
+check "w5 re-run at the tip skips again" "$gho" "release=false"
+pg SHA="$D" STUB_DEV_TIP="$D" STUB_SKIP="$A $B $C $D" STUB_BASE_SHA="$(printf 'e%.0s' $(seq 1 40))"
+check "w6 release off the first-parent line releases" "$gho" "release=true"
+pg STUB_SKIP="$B" STUB_RELEASES='17.8.0-mcp.1' STUB_TAGS='v17.0.0'
+check "w7 no final release releases" "$gho" "release=true"
+gt STUB_SKIP="$B" STUB_BASE_SHA="$A"
+check "w8 dispatch ignores the label" "$gho" "release=true"
+pg SHA=abc STUB_SKIP=abc
+nonzero "w9 short sha refused" "$rc"
 
 KEY=$'fake-deploy-key-line-1\nfake-deploy-key-line-2'
 HK='203.0.113.10 ssh-ed25519 AAAAhost'

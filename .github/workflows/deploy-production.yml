@@ -31,12 +31,16 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      pull-requests: read
+    outputs:
+      release: ${{ steps.gate.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: deploy/digitalocean
           persist-credentials: false
-      - name: Check the dispatcher, and the tip of dev for a re-run
+      - id: gate
+        name: Check the dispatcher, the tip of dev for a re-run, and the skip-release label
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -49,14 +53,14 @@ jobs:
 
   frontend-tests:
     needs: gate
-    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
+    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image && needs.gate.outputs.release == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/test-frontend-unit.yml # zizmor: ignore[self-repository] actionlint 1.7.12 rejects the $/ form
 
   fork-specs:
     needs: gate
-    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
+    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image && needs.gate.outputs.release == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/test-fork-specs.yml # zizmor: ignore[self-repository] actionlint 1.7.12 rejects the $/ form
@@ -64,7 +68,7 @@ jobs:
   version:
     name: Next version
     needs: gate
-    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image
+    if: github.repository == 'machinekind/openproject' && github.ref == 'refs/heads/dev' && !inputs.image && needs.gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

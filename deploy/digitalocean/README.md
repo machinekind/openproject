@@ -158,6 +158,20 @@ from a commit that is not on dev; merge that commit into dev with a merge commit
 A run whose commit is the latest release's commit stops with 'already released as <tag>; nothing to build',
 for example a re-run of a successful run. To redeploy that release, dispatch with `-f image=` from its notes.
 
+### Skipping a release
+
+Label a pull request `skip-release` when production does not need it yet: docs, comments, CI tweaks. When it
+merges, 'Check the run' walks dev back from the pushed commit to the latest release, one first-parent commit at
+a time. If every one came from a pull request merged into dev with the label, the tests, Next version, build,
+Deploy and Publish release are skipped. The run still shows as successful, and its summary says why.
+
+Nothing is lost. The next merge without the label releases everything since the latest release, labelled or
+not, and so does a dispatch, which ignores the label. The label never holds back other work either: one
+unlabelled pull request since the latest release (including one whose own run failed) makes the run release.
+A commit pushed to dev without a pull request, a latest release off dev's first-parent line, or more than 100
+commits to walk also release. Migrations in a labelled pull request still count at the next release's
+`release:minor` check.
+
 ### What the server allows
 
 The deploy key is one line in `/root/.ssh/authorized_keys`:
@@ -231,6 +245,7 @@ the checks of `make verify` from outside, and only then publishes the release.
 | Put the current kit on the server | agent | `make push` from a checkout of `origin/dev`: `git fetch origin`, then a checkout or worktree at `origin/dev` |
 | Create the GitHub side and install the key | **human** | `make ci-setup` |
 | Create the label | **human** | `gh label create release:minor --repo machinekind/openproject --color 0E8A16 --description "Deploy as a MINOR release; required when a merge adds migrations"` |
+| Create the skip label | **human** | `gh label create skip-release --repo machinekind/openproject --color BFD4F2 --description "Merge without releasing; the next release ships it"` |
 | Baseline release; the human decides the number | **human** | `make release IMAGE=<running image from make status> TAG=<baseline, e.g. 1.0.0> SHA=<its commit>`; SHA must be a commit on dev |
 | First run | human or agent | `gh workflow run deploy-production.yml --repo machinekind/openproject --ref dev` (add `-f bump=minor` if migrations landed since the baseline) |
 
