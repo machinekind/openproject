@@ -37,13 +37,16 @@ module InviteLinks
       @project = project
     end
 
-    def call(role_id: nil)
+    def call(role_id: nil, expires_in: nil)
       return unauthorized unless allowed?
 
       role = givable_role(role_id)
       return invalid_role if project && role.nil?
 
-      token = ::Token::InviteLink.create!(user:, project_id: project&.id, role_id: role&.id)
+      expires_in = expires_in.presence || ::Token::InviteLink::DEFAULT_EXPIRY
+      return invalid_expiry unless ::Token::InviteLink::EXPIRY_OPTIONS.key?(expires_in)
+
+      token = ::Token::InviteLink.create!(user:, project_id: project&.id, role_id: role&.id, expires_in:)
 
       ServiceResult.success(result: token)
     end
@@ -66,6 +69,10 @@ module InviteLinks
 
     def invalid_role
       ServiceResult.failure(message: I18n.t("invite_links.error_invalid_role"))
+    end
+
+    def invalid_expiry
+      ServiceResult.failure(message: I18n.t("invite_links.error_invalid_expiry"))
     end
 
     def unauthorized

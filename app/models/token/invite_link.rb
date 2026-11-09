@@ -32,13 +32,23 @@ module Token
   class InviteLink < Base
     include ExpirableToken
 
+    EXPIRY_OPTIONS = { "24h" => 24.hours, "7d" => 7.days, "30d" => 30.days }.freeze
+    DEFAULT_EXPIRY = "24h"
+
     prefix :join
 
     store_attribute :data, :project_id, :integer
     store_attribute :data, :role_id, :integer
+    store_attribute :data, :expires_in, :string
+
+    validates :expires_in, inclusion: { in: EXPIRY_OPTIONS.keys }, allow_nil: true
 
     def self.validity_time
-      24.hours
+      EXPIRY_OPTIONS.fetch(DEFAULT_EXPIRY)
+    end
+
+    def validity_time
+      EXPIRY_OPTIONS.fetch(expires_in.to_s, self.class.validity_time)
     end
 
     class << self

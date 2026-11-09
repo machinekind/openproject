@@ -96,6 +96,35 @@ RSpec.describe "Project invite link", :skip_csrf, type: :rails_request do
       expect(response.body).to include(CGI.escapeHTML(account_join_url(token: link.value)))
     end
 
+    it "is valid for 24 hours by default" do
+      post create_invite_link_project_members_path(project),
+           params: { role_id: role.id },
+           headers: turbo_stream_headers
+
+      expect(Token::InviteLink.last.expires_on).to be_within(1.minute).of(24.hours.from_now)
+    end
+
+    it "is valid for the chosen time" do
+      post create_invite_link_project_members_path(project),
+           params: { role_id: role.id, expires_in: "7d" },
+           headers: turbo_stream_headers
+
+      link = Token::InviteLink.last
+      expect(link.expires_in).to eq "7d"
+      expect(link.expires_on).to be_within(1.minute).of(7.days.from_now)
+    end
+
+    it "rejects an expiry that is not offered" do
+      expect do
+        post create_invite_link_project_members_path(project),
+             params: { role_id: role.id, expires_in: "1y" },
+             headers: turbo_stream_headers
+      end.not_to change(Token::InviteLink, :count)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).to include(I18n.t("invite_links.error_invalid_expiry"))
+    end
+
     it "replaces the previous link of the project" do
       previous = create(:invite_link_token, user: manager, project:, role:)
 
@@ -167,6 +196,26 @@ RSpec.describe "Project invite link", :skip_csrf, type: :rails_request do
 
         expect(response).to have_http_status(:not_found).or have_http_status(:forbidden)
       end
+    end
+  end
+
+  describe "the expiry select" do
+    it "offers every expiry and preselects 24 hours" do
+      get invite_link_project_members_path(project), headers: turbo_stream_headers
+
+      Token::InviteLink::EXPIRY_OPTIONS.each_key do |option|
+        expect(response.body).to include(I18n.t("invite_links.expires_in_options.#{option}"))
+      end
+      expect(response.body[/<option[^>]*value="24h"[^>]*>/]).to include("selected")
+    end
+
+    it "preselects the expiry of the active link" do
+      create(:invite_link_token, user: manager, project:, role:, expires_in: "30d")
+
+      get invite_link_project_members_path(project), headers: turbo_stream_headers
+
+      expect(response.body[/<option[^>]*value="30d"[^>]*>/]).to include("selected")
+      expect(response.body[/<option[^>]*value="24h"[^>]*>/]).not_to include("selected")
     end
   end
 

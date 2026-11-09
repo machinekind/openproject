@@ -107,7 +107,9 @@ class MembersController < ApplicationController
   end
 
   def create_invite_link
-    call = InviteLinks::CreateService.new(user: current_user, project: @project).call(role_id: params[:role_id])
+    call = InviteLinks::CreateService
+             .new(user: current_user, project: @project)
+             .call(role_id: params[:role_id], expires_in: params[:expires_in])
 
     if call.success?
       respond_with_dialog invite_link_dialog

@@ -389,6 +389,8 @@ en:
       token/ical:
         calendar: "Calendar"
         ical_token_query_assignment: "Query assignment"
+      token/invite_link:
+        expires_in: "Valid for"
       token/named:
         token_name: "Token name"
       type:
@@ -3380,15 +3382,22 @@ en:
 
   invite_links:
     button: "Invite link"
-    description_global: "Anyone with this link can create an account on this instance within the next 24 hours. Accounts are active right away, without an activation email or an administrator approval."
-    description_project: "Anyone with this link can create an account and join this project within the next 24 hours. Accounts are active right away, without an activation email or an administrator approval."
+    description_global: "Anyone with this link can create an account on this instance until the link expires. Accounts are active right away, without an activation email or an administrator approval."
+    description_project: "Anyone with this link can create an account and join this project until the link expires. Accounts are active right away, without an activation email or an administrator approval."
+    error_invalid_expiry: "Select how long the link stays valid."
     error_invalid_role: "Select a role that can be given to project members."
     error_not_authorized: "You are not allowed to create an invite link for this scope."
     expires_at: "This link expires on %{date}."
+    expires_in_caption: "Pick the shortest time that works."
+    expires_in_label: "Valid for"
+    expires_in_options:
+      24h: "24 hours"
+      7d: "7 days"
+      30d: "30 days"
     generate: "Generate link"
     generate_new: "Generate new link"
-    no_link_global: "There is no active invite link. Generate one to let people create their own account, active right away and valid for 24 hours."
-    no_link_project: "There is no active invite link for this project. Generate one to let people create their own account and join this project, active right away and valid for 24 hours."
+    no_link_global: "There is no active invite link. Generate one to let people create their own account, active right away."
+    no_link_project: "There is no active invite link for this project. Generate one to let people create their own account and join this project, active right away."
     role_caption: "Everyone who joins through this link receives this role. Generating a new link replaces the current one."
     role_label: "Role"
     title: "Invite link"

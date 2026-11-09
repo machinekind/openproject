@@ -89,6 +89,21 @@ RSpec.describe "Global invite link", :skip_csrf, type: :rails_request do
       expect(response.body).to include(CGI.escapeHTML(account_join_url(token: link.value)))
     end
 
+    it "is valid for the chosen time" do
+      post create_invite_link_users_path, params: { expires_in: "30d" }, headers: turbo_stream_headers
+
+      expect(Token::InviteLink.last.expires_on).to be_within(1.minute).of(30.days.from_now)
+    end
+
+    it "rejects an expiry that is not offered" do
+      expect do
+        post create_invite_link_users_path, params: { expires_in: "1y" }, headers: turbo_stream_headers
+      end.not_to change(Token::InviteLink, :count)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.body).to include(I18n.t("invite_links.error_invalid_expiry"))
+    end
+
     it "replaces the previous global link but keeps project links" do
       previous = create(:invite_link_token, user: admin)
       project_link = create(:invite_link_token, user: admin, project:, role:)

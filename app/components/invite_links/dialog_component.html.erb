@@ -57,7 +57,7 @@ See COPYRIGHT and LICENSE files for more details.
             flex.with_row(mb: 2) do
               render(OpPrimer::CopyToClipboardComponent.new(invite_url, test_selector: "invite-link"))
             end
-            flex.with_row(mb: @project ? 3 : 0) do
+            flex.with_row(mb: 3) do
               render(Primer::Beta::Text.new(color: :muted, font_size: :small)) do
                 t("invite_links.expires_at", date: expires_at)
               end
@@ -65,7 +65,7 @@ See COPYRIGHT and LICENSE files for more details.
           end
 
           if @project
-            flex.with_row do
+            flex.with_row(mb: 3) do
               render(
                 Primer::Alpha::Select.new(
                   name: :role_id,
@@ -77,6 +77,25 @@ See COPYRIGHT and LICENSE files for more details.
                 roles.each do |role|
                   select.option(label: role.name, value: role.id.to_s, selected: selected_role_id == role.id)
                 end
+              end
+            end
+          end
+
+          flex.with_row do
+            render(
+              Primer::Alpha::Select.new(
+                name: :expires_in,
+                label: t("invite_links.expires_in_label"),
+                caption: t("invite_links.expires_in_caption"),
+                data: { test_selector: "invite-link-expires-in" }
+              )
+            ) do |select|
+              expiry_options.each do |option|
+                select.option(
+                  label: t("invite_links.expires_in_options.#{option}"),
+                  value: option,
+                  selected: selected_expiry == option
+                )
               end
             end
           end
