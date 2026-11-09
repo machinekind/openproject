@@ -97,8 +97,8 @@ Ask your agent "Who am I in OpenProject?". It should call the `current_user` too
 ## License
 
 This is a modified version of [OpenProject](https://github.com/opf/openproject). Machinekind has changed it since
-2026-10-04. The changes unlock the MCP server and the Design settings without an Enterprise token, add MCP tools for
-project setup and apply the Machinekind brand. This fork is not affiliated with or endorsed by OpenProject GmbH.
+2026-10-04. The changes enable the MCP server and the Design settings, add MCP tools for project setup and apply the
+Machinekind brand. This fork is not affiliated with or endorsed by OpenProject GmbH.
 
 OpenProject is licensed under the GNU General Public License version 3. See [LICENSE](LICENSE) and
 [COPYRIGHT](COPYRIGHT).
