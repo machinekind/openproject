@@ -25,8 +25,7 @@ LISTEN/NOTIFY, which transaction pooling breaks.
 
 `OPENPROJECT_IMAGE` in `.env` decides what runs. It has no default.
 
-This fork enables the built-in MCP server and the Design settings without an Enterprise token, ships the
-Machinekind theme, and adds project, group, user and membership tools. That code exists only in an image built from the fork. The official image,
+This fork enables the built-in MCP server and the Design settings, ships the Machinekind theme, and adds project, group, user and membership tools. That code exists only in an image built from the fork. The official image,
 `openproject/openproject:<version>-slim`, runs on this stack unchanged, but its `/mcp` answers 404.
 
 Build with the "Build fork image" workflow. It runs from the default branch and checks out the ref you name:
