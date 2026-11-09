@@ -362,8 +362,9 @@ gh api -X PUT repos/machinekind/openproject/actions/permissions/selected-actions
 
 ## MCP in production
 
-- The endpoint is `https://<host>/mcp`. Clients authenticate with a personal API token (Basic auth, user
-  `apikey`) or OAuth with the `mcp` scope. The caller's OpenProject permissions apply to every tool call.
+- The endpoint is `https://<host>/mcp`. Clients authenticate with a personal API token or OAuth with the `mcp`
+  scope. The token goes in a Bearer header, or in Basic auth with the user `apikey`. `make mcp-register` uses
+  Basic auth. The caller's OpenProject permissions apply to every tool call.
 - **Never give an AI agent an administrator's token.** An agent reads work package text, and that text can
   carry instructions. With an admin token, a planted instruction could create another administrator.
   Give agents a dedicated non-admin account. If an agent must invite people, add a global role with
@@ -373,7 +374,7 @@ gh api -X PUT repos/machinekind/openproject/actions/permissions/selected-actions
   is why the account's permissions matter more than the switch.
 - Passwords sent through `create_user` would appear in the request log. Create users as `invited`.
 - The seeder creates configuration rows for new tools on every deploy, enabled.
-- See `MCP_SETUP.md` in the repository root for client configuration.
+- See `README.md` in the repository root for client setup, and `MCP_SETUP.md` for the tools.
 
 ## Updating
 

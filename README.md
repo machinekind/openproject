@@ -1,97 +1,108 @@
-# OpenProject
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/opf/openproject)
-![GitHub commit activity](https://img.shields.io/github/commit-activity/m/opf/openproject)
-![GitHub branch checks state](https://img.shields.io/github/checks-status/opf/openproject/dev)
+# Machinekind OpenProject
 
-> **Modified fork notice (2026-10-04).** This is an unaffiliated fork of [opf/openproject](https://github.com/opf/openproject) maintained by machinekind. It enables the built-in MCP server and the Administration > Design settings without an Enterprise token, ships the Machinekind colors, typefaces, logos and icons as its default look, and adds MCP project setup tools and agent workflow instructions. Other Enterprise features retain the upstream token checks. The bundled IBM Plex and Big Shoulders Display typefaces are licensed under the SIL Open Font License 1.1; see `frontend/src/assets/fonts/machinekind/`. See [MCP setup](MCP_SETUP.md). It is not endorsed by or associated with OpenProject GmbH. Distributed under the GNU GPL v3; see [LICENSE](LICENSE) and [COPYRIGHT](COPYRIGHT).
+Machinekind runs this fork of OpenProject at <https://projects.machinekind.ai>. This guide connects your AI agent
+to it through MCP (Model Context Protocol).
 
-**We empower teams to achieve great things together for the good of society.**
+## 1. Create an API token
 
-OpenProject is a web-based open source project management software for teams and organizations that require transparency, flexibility, and data sovereignty.
-Manage projects, portfolios, products, tasks, bugs, agile workflows, roadmaps, and team collaboration in a single platform. OpenProject can be self-hosted and is designed for organizations looking for an open source enterprise-ready alternative to tools such as Jira, MS Project, Monday, Asana, YouTrack while maintaining full control over their data and infrastructure.
+1. Sign in at <https://projects.machinekind.ai>.
+2. Open your avatar menu, choose **Account settings**, then **Access tokens**. The direct link is
+   <https://projects.machinekind.ai/my/access_tokens>.
+3. In the **API** section, click **+ API token**, give it a name and create it.
+4. Copy the token. It starts with `opapi-`, and OpenProject shows it only once.
 
-OpenProject is trusted by organizations worldwide, including enterprises, public institutions, and highly regulated industries.
+The agent acts as you. It can change anything you can change, and its changes apply immediately. Keep the token
+private, like a password.
 
-![Screenshot of OpenProject, showing the GitHub tab on a work package](GitHub-tab-new.png)
+## 2. Connect your client
 
-**OpenProject's key features include:**
+Each client below registers the server as `openproject-prod`.
 
-* [Project and portfolio management](https://www.openproject.org/collaboration-software-features/project-portfolio-management/)
-* [Agile boards, Kanban, Scrum, SAFe](https://www.openproject.org/collaboration-software-features/agile-project-management/)
-* [Project planning and scheduling with Gantt charts](https://www.openproject.org/collaboration-software-features/project-planning-scheduling/)
-* [Product and release planning](https://www.openproject.org/collaboration-software-features/product-development/)
-* [Task management and team collaboration](https://www.openproject.org/collaboration-software-features/task-management/)
-* [Time tracking, cost reporting, and budgeting](https://www.openproject.org/collaboration-software-features/time-tracking/)
-* [Bug tracking](https://www.openproject.org/collaboration-software-features/#bug-tracking)
-* [Team collaboration, wikis, forums, news](https://www.openproject.org/collaboration-software-features/team-collaboration/)
-* [Meeting agendas and meeting minutes](https://www.openproject.org/collaboration-software-features/meeting-management/)
-* [Integrations: Nextcloud, XWiki, GitHub, GitLab, and more](https://www.openproject.org/integrations/)
+### Claude Code (CLI and desktop app)
 
-More information can be found on our [website](https://www.openproject.org).
+The Code tab in the Claude desktop app uses the same MCP settings as the CLI, so one command sets up both. Run it in
+a terminal. It asks for the token without showing it, which keeps the token out of your shell history.
 
-## Start now with OpenProject
+```bash
+printf "OpenProject token: "; read -rs T; echo
+claude mcp add --transport http --scope user openproject-prod https://projects.machinekind.ai/mcp \
+  --header "Authorization: Bearer $T"
+unset T
+```
 
-- **Free Trial**: [Start a 14-days free trial of OpenProject](https://start.openproject.com/).
-- **Community Edition**, free of charge: Download OpenProject and get started with the self-hosted Community edition. If you want to run an instance of OpenProject in production (or for evaluation), refer to our in-depth [installation guides](https://www.openproject.org/download-and-installation/).
-- **Enterprise Edition**: Sign up for the Enterprise version, choose between cloud or on-premises and benefit from comprehensive support and Enterprise add-ons.
-- **Documentation**: Explore our [comprehensive documentation](https://www.openproject.org/docs/) to help you get up and running quickly.
-- **Training**: [Book one of our training or consulting offers](https://www.openproject.org/training-and-consulting/#training-signup) to get your team on board in no time.
+Start a new session in the CLI or the app. `claude mcp list` should show `openproject-prod` as connected.
 
-## Report bugs
+If the `claude` command is missing, install it first:
 
-You found a bug? Please [report it](https://www.openproject.org/docs/development/report-a-bug/) to our [OpenProject Community](https://community.openproject.org/projects/openproject). Thank you!
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
 
-## Contribute
+### Codex (CLI and desktop app)
 
-OpenProject is supported by its Community members, both companies and individuals.
+The Codex CLI and desktop app share `~/.codex/config.toml`. Run this in a terminal to add the server to that file:
 
-We are always looking for new members to our Community, so if you are interested in improving OpenProject we would be glad to welcome and support you getting into the code. There are guides as well, e.g. a [Quick Start for Developers](https://www.openproject.org/docs/development/development-environment/), but don't hesitate to simply [contact us](https://www.openproject.org/contact) if you have questions.
+```bash
+printf "OpenProject token: "; read -rs T; echo
+mkdir -p ~/.codex
+cat >> ~/.codex/config.toml <<EOF
 
-Working on OpenProject comes with the satisfaction of working on a widely used open source application.
+[mcp_servers.openproject-prod]
+url = "https://projects.machinekind.ai/mcp"
+http_headers = { Authorization = "Bearer $T" }
+EOF
+chmod 600 ~/.codex/config.toml
+unset T
+```
 
-Also, if you do not want to be limited to working on open source in your free time, OpenProject GmbH, the company contributing to the OpenProject development, [is hiring](https://www.openproject.org/career/).
+Restart the Codex app or CLI. `codex mcp list` should list `openproject-prod`. In the app, type `/mcp` in the
+composer to see it.
 
+### Antigravity
 
-## Stay in contact
+Antigravity reads MCP servers from `mcp_config.json`. Open the file:
 
-Here you can find our [contact information](https://www.openproject.org/contact/). As we regularly update OpenProject, we recommend staying in touch – here is where you can find us:
+- **App:** click **Customizations**, then **Installed**. In **MCP Servers**, click **Copy Config File Path** and open
+  that file.
+- **IDE:** click **…** at the top of the agent panel, then **MCP Servers**, **Manage MCP Servers** and
+  **View raw config**.
+- **CLI:** edit `~/.gemini/config/mcp_config.json`.
 
-- [OpenProject Community](https://www.openproject.org/blog/community-instance/) with [forum discussions](https://community.openproject.org/projects/openproject/forums): The open instance where we develop our features – transparent and open for discussions, bug reports or feature requests.
-- [LinkedIn](https://www.linkedin.com/company/18706985)
-- [Reddit](https://www.reddit.com/r/openproject/)
-- [Fosstodon](https://fosstodon.org/@openproject)
-- [Bluesky](https://bsky.app/profile/openproject.bsky.social)
+Add the `openproject-prod` entry under `mcpServers`, and replace `YOUR_TOKEN` with your token:
 
-## Security / responsible disclosure
+```json
+{
+  "mcpServers": {
+    "openproject-prod": {
+      "serverUrl": "https://projects.machinekind.ai/mcp",
+      "headers": { "Authorization": "Bearer YOUR_TOKEN" }
+    }
+  }
+}
+```
 
-We take security very seriously at OpenProject. We value any kind of feedback that
-will keep our Community secure. If you happen to come across a security issue we urge
-you to disclose it to us privately to allow our users and Community enough time to
-upgrade. Security issues will always take precedence over anything else in the pipeline.
+Save the file and restart Antigravity.
 
-For more information on how to disclose a security vulnerability, [please see this page](docs/security-and-privacy/statement-on-security/README.md).
+## 3. Check the connection
+
+Ask your agent "Who am I in OpenProject?". It should call the `current_user` tool and answer with your name.
+
+| Problem | Fix |
+|---|---|
+| HTTP 401 | The token is wrong or revoked. Create a new token and replace the old one. |
+| The server is missing or has no tools | Restart the client. |
+| You need to replace the token in Claude Code | Run `claude mcp remove --scope user openproject-prod`, then add it again. |
+| You need to replace the token in Codex or Antigravity | Edit the token in the config file. Running the Codex snippet again adds a duplicate entry. |
 
 ## License
 
-OpenProject is licensed under the terms of the GNU General Public License version 3.
-See [COPYRIGHT](COPYRIGHT) and [LICENSE](LICENSE) files for details.
+This is a modified version of [OpenProject](https://github.com/opf/openproject). Machinekind has changed it since
+2026-10-04. The changes unlock the MCP server and the Design settings without an Enterprise token, add MCP tools for
+project setup and apply the Machinekind brand. This fork is not affiliated with or endorsed by OpenProject GmbH.
 
-## Credits
+OpenProject is licensed under the GNU General Public License version 3. See [LICENSE](LICENSE) and
+[COPYRIGHT](COPYRIGHT).
 
-### Icons
-
-Thanks to Vincent Le Moign and his fabulous Minicons icons on [webalys.com](http://www.webalys.com/minicons/icons-free-pack.php).
-
-### OpenProject icon font
-
-Published and created by the OpenProject Foundation (OPF) under [Creative Commons Attribution 3.0 Unported License](http://creativecommons.org/licenses/by/3.0/)
-with icons from the following sources
-[Minicons Free Vector Icons Pack](http://www.webalys.com/minicons) and
-[User Interface Design framework](http://www.webalys.com/design-interface-application-framework.php) both by webalys
-
-**Creative Commons License**
-
-OpenProject Icon Font by the OpenProject Foundation (OPF) is licensed under Creative Commons Attribution 3.0 Unported License
-and Free for both personal and commercial use. You can copy, adapt, remix, distribute or transmit it.
-
-Under this condition: provide a mention of the "OpenProject Foundation" and a link back to OpenProject www.openproject.org.
+The OpenProject icon font is by the OpenProject Foundation (OPF), <https://www.openproject.org>. It is licensed under
+the [Creative Commons Attribution 3.0 Unported License](https://creativecommons.org/licenses/by/3.0/) and uses icons
+from the [Minicons](http://www.webalys.com/minicons) pack by webalys.
