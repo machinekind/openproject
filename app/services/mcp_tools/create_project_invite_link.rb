@@ -31,8 +31,9 @@
 module McpTools
   class CreateProjectInviteLink < Base
     default_title "Create project invite link"
-    default_description "Creates a multi-use invite link for a project. Anyone opening it can register an account " \
-                        "and joins the project with the given role. Use the list_roles tool to find the role."
+    default_description "Creates a multi-use invite link for a project. Anyone opening it before it expires can " \
+                        "register an account and joins the project with the given role. " \
+                        "Use the list_roles tool to find the role."
 
     name "create_project_invite_link"
     annotations read_only: false, idempotent: false, destructive: false
@@ -48,15 +49,20 @@ module McpTools
         role_id: {
           type: "integer",
           description: "The id of the project role everyone joining through the link receives."
+        },
+        expires_in: {
+          type: "string",
+          enum: ::Token::InviteLink::EXPIRY_OPTIONS.keys,
+          description: "How long the link stays valid. Defaults to #{::Token::InviteLink::DEFAULT_EXPIRY}."
         }
       }
     )
 
-    def call(project_id:, role_id:)
+    def call(project_id:, role_id:, expires_in: nil)
       project = find_project(project_id)
       return Failure("Project #{project_id} does not exist or is not visible to you.") if project.nil?
 
-      call = ::InviteLinks::CreateService.new(user: current_user, project:).call(role_id:)
+      call = ::InviteLinks::CreateService.new(user: current_user, project:).call(role_id:, expires_in:)
       return Failure(call.message) if call.failure?
 
       Success(payload(call.result))
@@ -72,10 +78,11 @@ module McpTools
     def payload(token)
       {
         url: url_helpers.account_join_url(token: token.value),
+        expires_in: token.expires_in,
         expires_at: token.expires_on.iso8601,
         project: { id: token.project.id, identifier: token.project.identifier, name: token.project.name },
         role: { id: token.role.id, name: token.role.name },
-        note: "The link can be used by any number of people and expires after 24 hours. " \
+        note: "The link can be used by any number of people until it expires. " \
               "Creating a new link revokes the previous link of this project."
       }
     end

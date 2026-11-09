@@ -73,6 +73,14 @@ module InviteLinks
       @link&.role_id || ProjectRole.in_new_project&.id || roles.first&.id
     end
 
+    def expiry_options
+      Token::InviteLink::EXPIRY_OPTIONS.keys
+    end
+
+    def selected_expiry
+      @link&.expires_in || Token::InviteLink::DEFAULT_EXPIRY
+    end
+
     def description_key
       @project ? "invite_links.description_project" : "invite_links.description_global"
     end

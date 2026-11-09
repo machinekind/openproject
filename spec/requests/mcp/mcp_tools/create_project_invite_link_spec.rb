@@ -78,6 +78,19 @@ RSpec.describe McpTools::CreateProjectInviteLink do
       expect(result_item["project"]).to include("id" => project.id, "identifier" => project.identifier)
       expect(result_item["role"]).to include("id" => role.id, "name" => "Robot wrangler")
       expect(result_item["note"]).to include("revokes")
+      expect(result_item["expires_in"]).to eq "24h"
+      expect(token.expires_on).to be_within(1.minute).of(24.hours.from_now)
+    end
+
+    context "with an expiry" do
+      let(:call_args) { { project_id: project.id, role_id: role.id, expires_in: "7d" } }
+
+      it "mints a link valid for that time" do
+        expect { mcp_request }.to change(Token::InviteLink, :count).by(1)
+
+        expect(Token::InviteLink.last.expires_on).to be_within(1.minute).of(7.days.from_now)
+        expect(result_item["expires_in"]).to eq "7d"
+      end
     end
 
     context "when the project is given by identifier" do

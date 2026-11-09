@@ -44,6 +44,20 @@ RSpec.describe Token::InviteLink do
       expect(token).not_to be_expired
     end
 
+    it "is valid for the chosen time" do
+      seven_days = described_class.create!(user: creator, expires_in: "7d")
+      thirty_days = described_class.create!(user: creator, project_id: project.id, role_id: role.id, expires_in: "30d")
+
+      expect(seven_days.expires_on).to be_within(1.minute).of(7.days.from_now)
+      expect(thirty_days.expires_on).to be_within(1.minute).of(30.days.from_now)
+      expect(thirty_days.reload.expires_in).to eq "30d"
+    end
+
+    it "rejects an expiry that is not offered" do
+      expect { described_class.create!(user: creator, expires_in: "1y") }
+        .to raise_error(ActiveRecord::RecordInvalid)
+    end
+
     it "is expired once the expiry has passed" do
       token = described_class.create!(user: creator)
       token.update_column(:expires_on, 1.minute.ago)

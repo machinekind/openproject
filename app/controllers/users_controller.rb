@@ -297,9 +297,14 @@ class UsersController < ApplicationController
   end
 
   def create_invite_link
-    InviteLinks::CreateService.new(user: current_user).call
+    call = InviteLinks::CreateService.new(user: current_user).call(expires_in: params[:expires_in])
 
-    respond_with_dialog InviteLinks::DialogComponent.new(link: active_invite_link)
+    if call.success?
+      respond_with_dialog InviteLinks::DialogComponent.new(link: active_invite_link)
+    else
+      respond_with_dialog InviteLinks::DialogComponent.new(link: active_invite_link, error: call.message),
+                          status: :unprocessable_entity
+    end
   end
 
   def invitation_link
