@@ -7,6 +7,8 @@ SHA_RE='^[0-9a-f]{40}$'
 DISPATCHERS_RE='^[A-Za-z0-9-]+(,[A-Za-z0-9-]+)*$'
 SRC_DIR="${OP_SOURCE_DIR:-$(cd "$KIT_DIR/../.." && pwd)}"
 KIT_FILES="deploy.sh docker-compose.yml Caddyfile ops/remote/ci-deploy.sh"
+SKIP_LABEL=skip-release
+SKIP_WALK_LIMIT=100
 
 output() { [ -z "${GITHUB_OUTPUT:-}" ] || printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
 summary() { [ -z "${GITHUB_STEP_SUMMARY:-}" ] || printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"; }
@@ -24,6 +26,28 @@ require_dispatcher() {
   fi
 }
 
+skip_labelled() { # skip_labelled REPO COMMIT: the pull request merged into dev that brought COMMIT has the label skip-release
+  labels="$(gh api "repos/$1/commits/$2/pulls" --jq '.[] | select(.base.ref == "dev" and .merged_at != null) | .labels[].name')" \
+    || die "could not read the pull requests of $2"
+  printf '%s\n' "$labels" | grep -x -F "$SKIP_LABEL" >/dev/null
+}
+
+release_skipped() { # release_skipped REPO SHA: SHA and each commit before it on dev, back to the latest release, came from a pull request labelled skip-release
+  [[ $2 =~ $SHA_RE ]] || die "SHA must be a full commit SHA"
+  skip_labelled "$1" "$2" || return 1
+  names="$(release_and_tag_names "$1")" || die "could not list the releases and tags of $1"
+  base="$(printf '%s\n' "$names" | max_final_semver)"
+  [ -n "$base" ] || return 1
+  base_sha="$(gh api "repos/$1/commits/$base" --jq .sha)" && [[ $base_sha =~ $SHA_RE ]] || die "could not resolve release $base to a commit"
+  commit="$2"
+  for _ in $(seq 1 "$SKIP_WALK_LIMIT"); do
+    commit="$(gh api "repos/$1/git/commits/$commit" --jq '.parents[0].sha // empty')" || die "could not read the parent of $commit"
+    [ "$commit" != "$base_sha" ] || return 0
+    if ! [[ $commit =~ $SHA_RE ]] || ! skip_labelled "$1" "$commit"; then return 1; fi
+  done
+  return 1
+}
+
 cmd_gate() {
   [ "${EVENT_NAME:-}" != workflow_dispatch ] || require_dispatcher
   if [ "${GITHUB_RUN_ATTEMPT:-1}" != 1 ] && [ -z "${INPUT_IMAGE:-}" ]; then
@@ -31,6 +55,13 @@ cmd_gate() {
     tip="$(gh api "repos/$repo/git/ref/heads/dev" --jq .object.sha)" && [[ $tip =~ $SHA_RE ]] || die "could not read the tip of dev"
     [ "$tip" = "$sha" ] || die "dev has moved on to $tip, so this re-run of $sha stops here. Re-runs deploy only the newest commit on dev: let the run for $tip deploy, or dispatch again."
   fi
+  if [ "${EVENT_NAME:-}" = push ] && release_skipped "${REPO:?set REPO}" "${SHA:?set SHA}"; then
+    output release false
+    summary "Release skipped: every pull request merged into dev since the latest release has the label \`$SKIP_LABEL\`. The next merge without it releases these changes too."
+    info "release skipped: every pull request merged into dev since the latest release has the label $SKIP_LABEL"
+    return
+  fi
+  output release true
   info "this run may continue"
 }
 
