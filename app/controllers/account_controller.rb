@@ -485,7 +485,7 @@ class AccountController < ApplicationController
     user = User.try_to_login(username, password, session)
     if user.nil?
       # login failed, now try to find out why and do the appropriate thing
-      user = User.find_by_login(username)
+      user = User.find_by_login_or_mail(username)
       if user and user.check_password?(password)
         # correct password
         if not user.active?

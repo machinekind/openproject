@@ -184,6 +184,7 @@ Rails/DynamicFindBy:
     - "modules/*/spec/features/**/*.rb"
   Whitelist:
     - find_by_login
+    - find_by_login_or_mail
     - find_by_mail
     - find_by_plaintext_value
     - find_by_rss_key

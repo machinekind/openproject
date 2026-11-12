@@ -50,6 +50,20 @@ module Users::Scopes
         # Fail over to case-insensitive if none was found
         user || by_login(login).first
       end
+
+      # A login always wins over a mail address, so nobody can take over
+      # another account's sign-in by choosing that account's mail as a login.
+      def find_by_login_or_mail(login_or_mail)
+        find_by_login(login_or_mail) || find_by_exact_mail(login_or_mail)
+      end
+
+      private
+
+      def find_by_exact_mail(mail)
+        return unless mail.to_s.include?("@")
+
+        find_by("LOWER(mail) = ?", mail.to_s.downcase)
+      end
     end
   end
 end
