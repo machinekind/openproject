@@ -5,3 +5,6 @@ puts "projects       #{Project.count}"
 puts "work packages  #{WorkPackage.count}"
 puts "self-registration #{Setting.self_registration} (0 = disabled)"
 puts "mcp server     #{McpConfiguration.server_config.enabled? ? 'enabled' : 'disabled'}"
+mail_off = Setting.email_delivery_method == :smtp && Setting.smtp_address.blank?
+puts "outgoing mail  #{mail_off ? 'NOT CONFIGURED, invitations and password resets are not delivered (make smtp-configure)' : Setting.email_delivery_method}"
+puts "failed mails   #{GoodJob::Job.where(job_class: 'Mails::MailerJob').where.not(error: nil).count}"

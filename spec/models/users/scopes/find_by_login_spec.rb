@@ -65,4 +65,43 @@ RSpec.describe Users::Scopes::FindByLogin do
       end
     end
   end
+
+  describe ".find_by_login_or_mail" do
+    subject { User.find_by_login_or_mail(search_login) }
+
+    let!(:user) { create(:user, login:, mail: "Some.Body@example.com") }
+
+    context "with the login" do
+      it { is_expected.to eql user }
+    end
+
+    context "with the mail address in another case" do
+      let(:search_login) { "some.body@EXAMPLE.com" }
+
+      it { is_expected.to eql user }
+    end
+
+    context "with a mail address nobody has" do
+      let(:search_login) { "nobody@example.com" }
+
+      it { is_expected.to be_nil }
+    end
+
+    context "with a value that is no mail address" do
+      let(:search_login) { "no-mail-address" }
+
+      before { user.update_column(:mail, search_login) }
+
+      it { is_expected.to be_nil }
+    end
+
+    context "with a mail address that is another user's login" do
+      let!(:other) { create(:user, login: "some.body@example.com") }
+      let(:search_login) { "some.body@example.com" }
+
+      it "prefers the login" do
+        expect(subject).to eql other
+      end
+    end
+  end
 end

@@ -1068,6 +1068,18 @@ RSpec.describe User do
       end
     end
 
+    context "with the mail address in place of the login" do
+      it "returns the user" do
+        expect(described_class.try_to_login(user.mail.upcase, password))
+          .to eq user
+      end
+
+      it "counts a wrong password against the account" do
+        expect { described_class.try_to_login(user.mail, "#{password}!") }
+          .to change { user.reload.failed_login_count }.by(1)
+      end
+    end
+
     context "with the user being locked" do
       let(:status) { described_class.statuses[:locked] }
 

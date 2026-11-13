@@ -528,6 +528,21 @@ RSpec.describe AccountController, :skip_2fa_stage do
     end
   end
 
+  describe "Login with the mail address of a user with forced password change" do
+    let(:password) { "adminADMIN!" }
+    let(:user) do
+      create(:user, login: "some_login", password:, password_confirmation: password, force_password_change: true)
+    end
+
+    it "asks for a new password under the account's login" do
+      post :login, params: { username: user.mail, password: }
+
+      expect(response).to render_template "my/password"
+      expect(assigns(:username)).to eq "some_login"
+      expect(flash[:error]).to eq I18n.t(:notice_account_new_password_forced)
+    end
+  end
+
   describe "Login for user with forced password change" do
     let(:admin) { create(:admin, force_password_change: true) }
 
